@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "klatooinian-huttese-audio"
+version = "0.1.0"
+description = "CLI tool for generating Klatooinian-timbre Huttese-ish speech from English text"
+authors = ["Jonathan Stokes <stokes@quorum.us>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
+coqui-tts = "^0.27.0"
+soundfile = "^0.12.0"
+sounddevice = "^0.4.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+
+[tool.poetry.scripts]
+huttese = "src.cli:main"
+huttese-repl = "src.interactive:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
