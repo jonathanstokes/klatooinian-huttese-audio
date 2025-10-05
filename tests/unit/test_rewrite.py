@@ -107,3 +107,37 @@ def test_literal_phrases_from_env():
     
     # Clean up
     del os.environ["LITERAL_PHRASES"]
+
+
+def test_punctuation_stays_with_word():
+    """Test that punctuation stays attached to preceding word during word swapping."""
+    from src.rewrite import rewrite_to_huttese
+    import os
+    
+    # Set up literal phrases
+    os.environ["LITERAL_PHRASES"] = "Trey,Hagar,dungeonmaster"
+    
+    # Reload module
+    import importlib
+    import src.rewrite
+    importlib.reload(src.rewrite)
+    from src.rewrite import rewrite_to_huttese
+    
+    # Test with period in middle
+    result = rewrite_to_huttese("Tell Trey that Hagar loves his dungeonmaster.", seed=42)
+    
+    # Period should stay with "dungeonmaster" not become separate word
+    assert " . " not in result, f"Period should not be separated: {result}"
+    assert "dungeonmaster." in result or result.endswith("dungeonmaster."), f"Period should stay with word: {result}"
+    
+    # Test with comma
+    result = rewrite_to_huttese("Hello Trey, how are you", seed=42)
+    assert " , " not in result, f"Comma should not be separated: {result}"
+    
+    # Test with exclamation
+    result = rewrite_to_huttese("Bring me the plans!", seed=42)
+    assert " ! " not in result, f"Exclamation should not be separated: {result}"
+    
+    # Clean up
+    if "LITERAL_PHRASES" in os.environ:
+        del os.environ["LITERAL_PHRASES"]

@@ -40,12 +40,26 @@ def _swap_words(text: str) -> str:
     """
     Swap words systematically to make word order less English-like.
     Swaps positions (2,3), (7,8), (12,13), etc. - every 5th word starting from position 2.
+    
+    Punctuation stays attached to the preceding word, except for trailing punctuation
+    at the end of the string.
     """
-    # Split on whitespace while preserving it
-    words = text.split()
+    # Extract trailing punctuation from the end
+    trailing_punct = ""
+    text_stripped = text.rstrip()
+    if text_stripped and text_stripped[-1] in ".,!?;:":
+        # Find all trailing punctuation
+        i = len(text_stripped) - 1
+        while i >= 0 and text_stripped[i] in ".,!?;:":
+            i -= 1
+        trailing_punct = text_stripped[i+1:]
+        text_stripped = text_stripped[:i+1]
+    
+    # Split into words (this will keep punctuation attached to words)
+    words = text_stripped.split()
     
     if len(words) < 2:
-        return text
+        return text_stripped + trailing_punct
     
     # Swap pairs: (1,2), (6,7), (11,12), (16,17), ... (0-indexed)
     # Pattern: positions 1+5n and 2+5n for n=0,1,2,...
@@ -55,7 +69,7 @@ def _swap_words(text: str) -> str:
         words[i], words[i+1] = words[i+1], words[i]
         i += 5  # Move to next swap position (5 words later)
     
-    return " ".join(words)
+    return " ".join(words) + trailing_punct
 
 def _apply_huttese_transforms(s: str, rnd) -> str:
     """Apply the Huttese transformation rules to a string."""
@@ -112,7 +126,8 @@ def rewrite_to_huttese(text: str, seed: int = 42) -> str:
         content = match.group(1) if match.group(1) is not None else match.group(2)
         idx = len(preserved_sections)
         preserved_sections.append(content)
-        return " " + placeholder_pattern.format(idx) + " "
+        # Don't add extra spaces - let the original spacing remain
+        return placeholder_pattern.format(idx)
     
     # First, replace quoted text with placeholders
     # Match both 'text' and "text"
@@ -127,7 +142,8 @@ def rewrite_to_huttese(text: str, seed: int = 42) -> str:
         def save_literal(match):
             idx = len(preserved_sections)
             preserved_sections.append(match.group(0))  # Preserve original case
-            return " " + placeholder_pattern.format(idx) + " "
+            # Don't add extra spaces - let the original spacing remain
+            return placeholder_pattern.format(idx)
         
         s = re.sub(pattern, save_literal, s, flags=re.IGNORECASE)
     

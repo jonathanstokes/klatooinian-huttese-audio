@@ -44,6 +44,7 @@ def print_help():
     print("  seed <n>      - Set rewrite seed (default: 42)")
     print("  semitones <n> - Set pitch shift (default: -5)")
     print("  tempo <n>     - Set speed multiplier (default: 0.9, 1.0=normal)")
+    print("  verbose on/off - Toggle verbose timing mode (default: off)")
     print()
 
 
@@ -73,6 +74,7 @@ def main():
     chorus_ms = 0
     grit_mode = "combo"  # Default to combo mode for gravelly without doubling
     tempo = 0.9  # default: 10% faster
+    verbose = False  # verbose timing mode
     
     # Temporary files
     tmp_dir = Path("/tmp/huttese_repl")
@@ -119,28 +121,65 @@ def main():
                 except (ValueError, IndexError):
                     print("✗ Usage: tempo <number>")
                 continue
-            
+
+            if text.lower().startswith("verbose "):
+                try:
+                    mode = text.split()[1].lower()
+                    if mode == "on":
+                        verbose = True
+                        print("✓ Verbose timing mode enabled")
+                    elif mode == "off":
+                        verbose = False
+                        print("✓ Verbose timing mode disabled")
+                    else:
+                        print("✗ Usage: verbose on|off")
+                except IndexError:
+                    print("✗ Usage: verbose on|off")
+                continue
+
             # Process text
             start_time = time.time()
-            
+
             # Rewrite
+            if verbose:
+                print("  \033[2m⏱️  Starting rewrite...\033[0m")
+            step_start = time.time()
             huttese = rewrite_to_huttese(text, seed=seed)
+            if verbose:
+                print(f"  \033[2m⏱️  Rewrite: {time.time() - step_start:.3f}s\033[0m")
             print(f"  \033[2m→ {huttese}\033[0m")
-            
+
             # Synthesize
             tmp_raw = tmp_dir / f"raw_{int(time.time() * 1000)}.wav"
             tmp_fx = tmp_dir / f"fx_{int(time.time() * 1000)}.wav"
-            
+
             try:
                 # Suppress TTS output
                 old_stdout = sys.stdout
                 old_stderr = sys.stderr
                 sys.stdout = open("/dev/null", "w")
                 sys.stderr = open("/dev/null", "w")
-                
+
                 try:
+                    if verbose:
+                        # Temporarily restore stdout for verbose message
+                        sys.stdout.close()
+                        sys.stdout = old_stdout
+                        print("  \033[2m⏱️  Starting synthesis...\033[0m")
+                        sys.stdout = open("/dev/null", "w")
+
+                    step_start = time.time()
                     synth_to_wav(huttese, str(tmp_raw))
-                    
+                    synth_time = time.time() - step_start
+
+                    if verbose:
+                        sys.stdout.close()
+                        sys.stdout = old_stdout
+                        print(f"  \033[2m⏱️  Synthesis: {synth_time:.3f}s\033[0m")
+                        print("  \033[2m⏱️  Starting FX processing...\033[0m")
+                        sys.stdout = open("/dev/null", "w")
+
+                    step_start = time.time()
                     process_klatooinian(
                         str(tmp_raw), str(tmp_fx),
                         semitones=semitones,
@@ -150,17 +189,32 @@ def main():
                         grit_mode=grit_mode,
                         tempo=tempo,
                     )
+                    fx_time = time.time() - step_start
+
+                    if verbose:
+                        sys.stdout.close()
+                        sys.stdout = old_stdout
+                        print(f"  \033[2m⏱️  FX processing: {fx_time:.3f}s\033[0m")
+                        sys.stdout = open("/dev/null", "w")
                 finally:
                     sys.stdout.close()
                     sys.stderr.close()
                     sys.stdout = old_stdout
                     sys.stderr = old_stderr
-                
+
                 # Play
+                if verbose:
+                    print("  \033[2m⏱️  Playing audio...\033[0m")
+                step_start = time.time()
                 play_wav(str(tmp_fx))
-                
+                play_time = time.time() - step_start
+
                 elapsed = time.time() - start_time
-                print(f"  \033[2m⏱️  {elapsed:.1f}s\033[0m")
+                if verbose:
+                    print(f"  \033[2m⏱️  Playback: {play_time:.3f}s\033[0m")
+                    print(f"  \033[2m⏱️  Total: {elapsed:.3f}s\033[0m")
+                else:
+                    print(f"  \033[2m⏱️  {elapsed:.1f}s\033[0m")
                 print()
                 
             finally:

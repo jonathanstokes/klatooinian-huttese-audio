@@ -5,6 +5,7 @@ suppress_tts_loading_messages()
 from TTS.api import TTS
 import soundfile as sf
 import numpy as np
+import torch
 from pathlib import Path
 
 # Lazy singleton so the model loads once per process
@@ -13,7 +14,17 @@ _TTS_MODEL = None
 def get_tts():
     global _TTS_MODEL
     if _TTS_MODEL is None:
-        _TTS_MODEL = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2")
+        # Check if GPU acceleration is available
+        # Coqui TTS only supports CUDA, not MPS (Apple Silicon)
+        use_gpu = torch.cuda.is_available()
+
+        if not use_gpu and torch.backends.mps.is_available():
+            # Apple Silicon detected but Coqui TTS doesn't support MPS
+            # Fall back to CPU (still reasonably fast on Apple Silicon)
+            print("Note: Apple Silicon detected. Coqui TTS doesn't support MPS acceleration yet.")
+            print("      Running on CPU (still optimized for Apple Silicon).")
+
+        _TTS_MODEL = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", gpu=use_gpu)
     return _TTS_MODEL
 
 def synth_to_wav(text: str, wav_path: str, sample_rate: int = 24000):

@@ -77,7 +77,8 @@ def process_klatooinian(in_wav: str, out_wav: str, semitones: int = -3,
         effective_chorus = max(20, chorus_ms)  # Clamp to sox minimum
         # Sox chorus format: gain-in gain-out delay decay speed depth [ -s | -t ]
         sox_cmd.extend(["chorus", "0.6", "0.9", str(effective_chorus), "0.4", "0.25", "2", "-t"])
-    
+
+
     # Add EQ (bass+3 treble-2)
     sox_cmd.extend(["bass", "+3", "treble", "-2"])
     
