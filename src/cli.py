@@ -11,7 +11,6 @@ import sounddevice as sd
 import soundfile as sf
 
 from .rewrite import rewrite_to_huttese
-from .synth import synth_to_wav
 from .fx import process_klatooinian
 
 def play_wav(path: str):
@@ -22,6 +21,11 @@ def play_wav(path: str):
 def main():
     ap = argparse.ArgumentParser(prog="huttese", description="English -> Huttese-ish -> Klatooinian timbre")
     ap.add_argument("text", nargs="*", help="Text to synthesize. If omitted, reads from stdin.")
+    ap.add_argument("--engine", type=str, default="kokoro",
+                    choices=["kokoro", "coqui", "simple"],
+                    help="TTS engine: kokoro (Kokoro TTS, fast GPU), coqui (XTTS v2, high quality), simple (macOS say, instant)")
+    ap.add_argument("--voice", type=str, default=None,
+                    help="Voice to use. Kokoro: am_michael (default), hm_omega, jm_kumo, etc. Simple: Alex (default), Zoe, Samantha, Daniel, etc.")
     ap.add_argument("--seed", type=int, default=42, help="Deterministic rewrite seed")
     ap.add_argument("--semitones", type=int, default=-5, help="Pitch shift in semitones (formant-preserved)")
     ap.add_argument("--grit-drive", type=int, default=5, help="Grit intensity (0=none, 1-10=amount)")
@@ -41,6 +45,17 @@ def main():
     raw_text = " ".join(args.text) if args.text else sys.stdin.read().strip()
     if not raw_text:
         print("No input text.", file=sys.stderr); sys.exit(1)
+
+    # Import the appropriate synth module based on engine choice
+    if args.engine == "kokoro":
+        from .synth_f5 import synth_to_wav
+        engine_name = "Kokoro TTS"
+    elif args.engine == "coqui":
+        from .synth import synth_to_wav
+        engine_name = "Coqui XTTS v2"
+    else:  # simple
+        from .synth_simple import synth_to_wav
+        engine_name = "macOS say"
 
     # Start timing
     total_start = time.time()
@@ -73,9 +88,17 @@ def main():
     try:
         # Synthesis step
         if args.verbose:
-            print("⏱️  Starting synthesis...")
+            print(f"⏱️  Starting synthesis ({engine_name})...")
         step_start = time.time()
-        synth_to_wav(hut, tmp_raw)  # 24kHz raw TTS
+        # Pass voice parameter for Kokoro and Simple engines
+        if args.engine == "kokoro":
+            voice = args.voice if args.voice else "am_michael"
+            synth_to_wav(hut, tmp_raw, voice=voice)
+        elif args.engine == "simple":
+            voice = args.voice if args.voice else "Alex"
+            synth_to_wav(hut, tmp_raw, voice=voice)
+        else:  # coqui
+            synth_to_wav(hut, tmp_raw)  # 24kHz raw TTS
         if args.verbose:
             print(f"⏱️  Synthesis: {time.time() - step_start:.3f}s")
 

@@ -10,6 +10,11 @@ import sys
 warnings.filterwarnings("ignore", category=UserWarning, module="jieba")
 warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
 
+# Suppress Kokoro/PyTorch warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.rnn")
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch.nn.utils.weight_norm")
+warnings.filterwarnings("ignore", message=".*Defaulting repo_id to hexgrad/Kokoro-82M.*")
+
 # Suppress TTS library's verbose console output
 # The TTS library prints directly to stdout, so we need to redirect it
 class SuppressTTSOutput:

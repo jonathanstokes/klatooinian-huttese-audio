@@ -6,10 +6,18 @@ import subprocess
 import os
 from pathlib import Path
 
-def synth_to_wav(text: str, wav_path: str, sample_rate: int = 24000):
+def synth_to_wav(text: str, wav_path: str, sample_rate: int = 24000, voice: str = "Alex"):
     """
     Synthesize speech using macOS 'say' command.
     This is a fallback that doesn't require downloading models.
+
+    Available voices (use `say -v '?'` to see all):
+    - Alex (default) - Male voice
+    - Zoe (premium) - Female voice, high quality
+    - Samantha - Female voice
+    - Daniel - Male voice (British)
+    - Karen - Female voice (Australian)
+    - And many more...
     """
     # Use macOS 'say' command to generate audio
     # -o outputs to file, -r sets rate (words per minute)
@@ -19,9 +27,9 @@ def synth_to_wav(text: str, wav_path: str, sample_rate: int = 24000):
     # Generate AIFF file with 'say'
     subprocess.run([
         "say", "-o", aiff_path,
-        "-v", "Alex",  # Use Alex voice (deeper male voice)
-        "-r", "180",   # Slightly slower speech rate
-        text
+        "-v", voice,   # Use specified voice
+        "-r", "120",   # Slightly slower speech rate (was 180 for Alex)
+        "[[pbas .5]] " + text
     ], check=True)
 
     # Convert AIFF to WAV and add 0.5 seconds of silence padding at the end
