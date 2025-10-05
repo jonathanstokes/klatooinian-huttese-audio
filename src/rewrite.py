@@ -1,6 +1,11 @@
 import re
 import random
+import os
 from typing import Callable
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 VOWELS = "aeiou"
 CONS = "bcdfghjklmnpqrstvwxz"
@@ -15,6 +20,21 @@ def _len_vowel(m, rnd):
     if ch in "ao" and rnd.random() < 0.15:
         return ch * 2
     return ch
+
+def _get_literal_phrases():
+    """Get list of literal phrases from environment variable."""
+    literal_str = os.getenv("LITERAL_PHRASES", "")
+    if not literal_str:
+        return []
+    
+    # Parse comma-delimited list and strip whitespace
+    phrases = [p.strip() for p in literal_str.split(",") if p.strip()]
+    
+    # Sort by length (longest first) to match longer phrases before shorter ones
+    # e.g., "Star Wars" before "Star"
+    phrases.sort(key=len, reverse=True)
+    
+    return phrases
 
 def _swap_words(text: str) -> str:
     """
@@ -76,25 +96,40 @@ def rewrite_to_huttese(text: str, seed: int = 42) -> str:
     Words or phrases in single quotes ('word') or double quotes ("phrase") are 
     preserved as-is (without the quotes).
     
+    Words or phrases in the LITERAL_PHRASES environment variable are also preserved.
+    
     Word order is also swapped systematically to sound less English-like.
     """
     rnd = _rng(seed)
     
-    # Extract quoted sections (both single and double quotes)
-    quoted_sections = []
+    # Extract quoted sections and literal phrases
+    preserved_sections = []
     # Use a placeholder with only special characters and numbers
     placeholder_pattern = "§§§{}§§§"
     
-    def save_quoted(match):
+    def save_preserved(match):
         # Extract content from either single or double quotes
         content = match.group(1) if match.group(1) is not None else match.group(2)
-        idx = len(quoted_sections)
-        quoted_sections.append(content)
+        idx = len(preserved_sections)
+        preserved_sections.append(content)
         return " " + placeholder_pattern.format(idx) + " "
     
-    # Replace quoted text with placeholders
+    # First, replace quoted text with placeholders
     # Match both 'text' and "text"
-    s = re.sub(r"'([^']+)'|\"([^\"]+)\"", save_quoted, text)
+    s = re.sub(r"'([^']+)'|\"([^\"]+)\"", save_preserved, text)
+    
+    # Second, replace literal phrases from environment variable
+    literal_phrases = _get_literal_phrases()
+    for phrase in literal_phrases:
+        # Case-insensitive match with word boundaries
+        pattern = r'\b' + re.escape(phrase) + r'\b'
+        
+        def save_literal(match):
+            idx = len(preserved_sections)
+            preserved_sections.append(match.group(0))  # Preserve original case
+            return " " + placeholder_pattern.format(idx) + " "
+        
+        s = re.sub(pattern, save_literal, s, flags=re.IGNORECASE)
     
     # Swap word order before phonetic transformations
     s = _swap_words(s)
@@ -103,10 +138,10 @@ def rewrite_to_huttese(text: str, seed: int = 42) -> str:
     s = s.lower()
     s = _apply_huttese_transforms(s, rnd)
     
-    # Restore quoted sections (without quotes)
-    for idx, quoted_text in enumerate(quoted_sections):
+    # Restore preserved sections (without quotes)
+    for idx, preserved_text in enumerate(preserved_sections):
         placeholder = placeholder_pattern.format(idx)
-        s = s.replace(placeholder, quoted_text)
+        s = s.replace(placeholder, preserved_text)
     
     # spacing/punct tidy
     s = re.sub(r"\s+", " ", s).strip()

@@ -75,3 +75,35 @@ def test_word_swapping():
     result1 = rewrite_to_huttese("one two three four five", seed=42)
     result2 = rewrite_to_huttese("one two three four five", seed=42)
     assert result1 == result2
+
+
+def test_literal_phrases_from_env():
+    """Test that phrases from LITERAL_PHRASES env var are preserved."""
+    import os
+    from src.rewrite import rewrite_to_huttese
+    
+    # Set environment variable for test
+    os.environ["LITERAL_PHRASES"] = "Hendo,Star Wars,Chris"
+    
+    # Reload the module to pick up new env var
+    import importlib
+    import src.rewrite
+    importlib.reload(src.rewrite)
+    from src.rewrite import rewrite_to_huttese
+    
+    # Test single word
+    result = rewrite_to_huttese("Tell Hendo to bring the plans", seed=42)
+    assert "Hendo" in result
+    assert "tell" not in result.lower()  # Should be transformed
+    
+    # Test multi-word phrase
+    result = rewrite_to_huttese("I love Star Wars movies", seed=42)
+    assert "Star Wars" in result
+    assert "love" not in result.lower()  # Should be transformed
+    
+    # Test case insensitivity
+    result = rewrite_to_huttese("chris is here", seed=42)
+    assert "chris" in result  # Preserves original case
+    
+    # Clean up
+    del os.environ["LITERAL_PHRASES"]

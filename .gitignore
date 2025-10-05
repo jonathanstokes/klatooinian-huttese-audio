@@ -39,3 +39,4 @@ out_*.wav
 .pytest_cache/
 .coverage
 htmlcov/
+.env
