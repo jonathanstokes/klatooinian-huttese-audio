@@ -10,6 +10,28 @@ load_dotenv()
 VOWELS = "aeiou"
 CONS = "bcdfghjklmnpqrstvwxz"
 
+# Common English stop words that can be safely omitted
+STOP_WORDS = {
+    "a", "an", "the",  # Articles
+    "is", "are", "was", "were", "be", "been", "being",  # Be verbs
+    "have", "has", "had", "having",  # Have verbs
+    "do", "does", "did", "doing",  # Do verbs
+    "will", "would", "shall", "should", "may", "might", "must", "can", "could",  # Modals
+    "am",  # First person be
+    "i", "you", "he", "she", "it", "we", "they",  # Pronouns
+    "me", "him", "her", "us", "them",  # Object pronouns
+    "my", "your", "his", "its", "our", "their",  # Possessive pronouns
+    "this", "that", "these", "those",  # Demonstratives
+    "of", "to", "in", "on", "at", "by", "for", "with", "from", "as",  # Prepositions
+    "into", "onto", "upon", "about", "above", "below", "between", "through",  # More prepositions
+    "and", "but", "or", "nor", "so", "yet",  # Conjunctions
+    "if", "then", "than", "when", "where", "while", "because",  # Subordinating conjunctions
+    "not", "no",  # Negations
+    "all", "any", "some", "each", "every", "both", "few", "more", "most", "other", "such",  # Quantifiers
+    "just", "only", "very", "too", "also",  # Adverbs
+    "what", "which", "who", "whom", "whose", "why", "how",  # Question words
+}
+
 def _rng(seed: int):
     rnd = random.Random(seed)
     return rnd
@@ -36,11 +58,71 @@ def _get_literal_phrases():
     
     return phrases
 
+def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int = 0) -> str:
+    """
+    Strip words from text to make it shorter.
+
+    Args:
+        text: Input text (may contain placeholders like §§§0§§§)
+        strip_stop_words: If True, remove common English stop words
+        strip_every_nth: If > 0, also remove every Nth word from remaining words
+
+    Returns:
+        Text with words stripped, preserving placeholders and punctuation
+    """
+    if not strip_stop_words and strip_every_nth == 0:
+        return text  # No stripping needed
+
+    # Extract trailing punctuation
+    trailing_punct = ""
+    text_stripped = text.rstrip()
+    if text_stripped and text_stripped[-1] in ".,!?;:":
+        i = len(text_stripped) - 1
+        while i >= 0 and text_stripped[i] in ".,!?;:":
+            i -= 1
+        trailing_punct = text_stripped[i+1:]
+        text_stripped = text_stripped[:i+1]
+
+    # Split into words
+    words = text_stripped.split()
+
+    if len(words) == 0:
+        return text
+
+    # Filter out stop words (but keep placeholders)
+    if strip_stop_words:
+        filtered_words = []
+        for word in words:
+            # Check if this is a placeholder (§§§N§§§)
+            if word.startswith("§§§") and word.endswith("§§§"):
+                filtered_words.append(word)
+            else:
+                # Remove punctuation for stop word check
+                word_clean = word.strip(".,!?;:").lower()
+                if word_clean not in STOP_WORDS:
+                    filtered_words.append(word)
+        words = filtered_words
+
+    # Apply Nth word stripping if requested
+    if strip_every_nth > 0 and len(words) > 0:
+        filtered_words = []
+        for i, word in enumerate(words):
+            # Keep placeholders always
+            if word.startswith("§§§") and word.endswith("§§§"):
+                filtered_words.append(word)
+            # Skip every Nth word (1-indexed, so i+1)
+            elif (i + 1) % strip_every_nth != 0:
+                filtered_words.append(word)
+        words = filtered_words
+
+    return " ".join(words) + trailing_punct
+
+
 def _swap_words(text: str) -> str:
     """
     Swap words systematically to make word order less English-like.
     Swaps positions (2,3), (7,8), (12,13), etc. - every 5th word starting from position 2.
-    
+
     Punctuation stays attached to the preceding word, except for trailing punctuation
     at the end of the string.
     """
@@ -102,17 +184,31 @@ def _apply_huttese_transforms(s: str, rnd) -> str:
 
     return s
 
-def rewrite_to_huttese(text: str, seed: int = 42) -> str:
+def rewrite_to_huttese(
+    text: str,
+    seed: int = 42,
+    strip_stop_words: bool = True,
+    strip_every_nth: int = 0
+) -> str:
     """
     Deterministic rewrite -> "Huttese-ish"
     Keep (C)V(C) bias, break clusters, map th/f/v/j, roll r, add '-ah/-oo' endings sometimes.
-    
-    Words or phrases in single quotes ('word') or double quotes ("phrase") are 
+
+    Words or phrases in single quotes ('word') or double quotes ("phrase") are
     preserved as-is (without the quotes).
-    
+
     Words or phrases in the LITERAL_PHRASES environment variable are also preserved.
-    
+
     Word order is also swapped systematically to sound less English-like.
+
+    Args:
+        text: Input English text to transform
+        seed: Random seed for deterministic transformations
+        strip_stop_words: If True (default), remove common English stop words to shorten output
+        strip_every_nth: If > 0, also strip every Nth word after stop word removal (0 = disabled)
+
+    Returns:
+        Transformed "Huttese-ish" text
     """
     rnd = _rng(seed)
     
@@ -146,10 +242,13 @@ def rewrite_to_huttese(text: str, seed: int = 42) -> str:
             return placeholder_pattern.format(idx)
         
         s = re.sub(pattern, save_literal, s, flags=re.IGNORECASE)
-    
+
+    # Strip words (stop words and/or every Nth word) before other transformations
+    s = _strip_words(s, strip_stop_words=strip_stop_words, strip_every_nth=strip_every_nth)
+
     # Swap word order before phonetic transformations
     s = _swap_words(s)
-    
+
     # Apply Huttese transformation to the remaining text
     s = s.lower()
     s = _apply_huttese_transforms(s, rnd)

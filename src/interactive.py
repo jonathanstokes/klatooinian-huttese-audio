@@ -14,7 +14,6 @@ import sounddevice as sd
 import soundfile as sf
 
 from .rewrite import rewrite_to_huttese
-from .synth import synth_to_wav
 from .fx import process_klatooinian
 
 
@@ -25,38 +24,47 @@ def play_wav(path: str):
     sd.wait()
 
 
-def print_banner():
+def print_banner(engine_name):
     """Print welcome banner."""
     print("=" * 60)
     print("  🎙️  Klatooinian Huttese Speech Synthesizer")
     print("=" * 60)
     print()
-    print("Loading neural TTS model (this may take a moment)...")
+    print(f"Engine: {engine_name}")
+    print("Loading TTS model (this may take a moment)...")
 
 
 def print_help():
     """Print help message."""
     print()
     print("Commands:")
-    print("  <text>        - Speak text in Huttese")
-    print("  help          - Show this help")
-    print("  quit/exit/q   - Exit the program")
-    print("  seed <n>      - Set rewrite seed (default: 42)")
-    print("  semitones <n> - Set pitch shift (default: -5)")
-    print("  tempo <n>     - Set speed multiplier (default: 0.9, 1.0=normal)")
+    print("  <text>         - Speak text in Huttese")
+    print("  help           - Show this help")
+    print("  quit/exit/q    - Exit the program")
+    print("  engine <name>  - Set TTS engine: kokoro (default), coqui, simple")
+    print("  voice <name>   - Set voice (depends on engine)")
+    print("  seed <n>       - Set rewrite seed (default: 42)")
+    print("  semitones <n>  - Set pitch shift (default: -5)")
+    print("  tempo <n>      - Set speed multiplier (default: 0.9, 1.0=normal)")
     print("  verbose on/off - Toggle verbose timing mode (default: off)")
     print()
 
 
 def main():
     """Run interactive REPL."""
+    # REPL state
+    engine = "kokoro"  # Default engine
+    voice = "am_michael"  # Default voice for kokoro
+    engine_name = "Kokoro TTS"
+    synth_to_wav = None
+
     # Print banner
-    print_banner()
-    
+    print_banner(engine_name)
+
     # Pre-load TTS model
     try:
-        from TTS.api import TTS
-        tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2")
+        from .synth_f5 import synth_to_wav as kokoro_synth
+        synth_to_wav = kokoro_synth
         print("✓ Model loaded successfully!")
         print()
         print("Type a sentence and press Enter to hear it in Huttese.")
@@ -65,8 +73,8 @@ def main():
     except Exception as e:
         print(f"✗ Error loading TTS model: {e}")
         sys.exit(1)
-    
-    # REPL state
+
+    # Other REPL state
     seed = 42
     semitones = -5
     grit_drive = 5
@@ -97,7 +105,46 @@ def main():
             if text.lower() == "help":
                 print_help()
                 continue
-            
+
+            if text.lower().startswith("engine "):
+                try:
+                    new_engine = text.split()[1].lower()
+                    if new_engine not in ["kokoro", "coqui", "simple"]:
+                        print("✗ Invalid engine. Choose: kokoro, coqui, simple")
+                        continue
+
+                    engine = new_engine
+
+                    # Load appropriate synth module
+                    if engine == "kokoro":
+                        from .synth_f5 import synth_to_wav as kokoro_synth
+                        synth_to_wav = kokoro_synth
+                        engine_name = "Kokoro TTS"
+                        voice = "am_michael"  # Reset to default kokoro voice
+                    elif engine == "coqui":
+                        from .synth import synth_to_wav as coqui_synth
+                        synth_to_wav = coqui_synth
+                        engine_name = "Coqui XTTS v2"
+                        voice = None  # Coqui doesn't use voice parameter
+                    else:  # simple
+                        from .synth_simple import synth_to_wav as simple_synth
+                        synth_to_wav = simple_synth
+                        engine_name = "macOS say"
+                        voice = "Alex"  # Reset to default macOS voice
+
+                    print(f"✓ Engine set to {engine_name}")
+                except (ValueError, IndexError):
+                    print("✗ Usage: engine kokoro|coqui|simple")
+                continue
+
+            if text.lower().startswith("voice "):
+                try:
+                    voice = text.split(maxsplit=1)[1]
+                    print(f"✓ Voice set to {voice}")
+                except IndexError:
+                    print("✗ Usage: voice <name>")
+                continue
+
             if text.lower().startswith("seed "):
                 try:
                     seed = int(text.split()[1])
@@ -169,7 +216,11 @@ def main():
                         sys.stdout = open("/dev/null", "w")
 
                     step_start = time.time()
-                    synth_to_wav(huttese, str(tmp_raw))
+                    # Pass voice parameter for kokoro and simple engines
+                    if engine == "kokoro" or engine == "simple":
+                        synth_to_wav(huttese, str(tmp_raw), voice=voice)
+                    else:  # coqui
+                        synth_to_wav(huttese, str(tmp_raw))
                     synth_time = time.time() - step_start
 
                     if verbose:

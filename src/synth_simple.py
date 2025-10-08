@@ -28,8 +28,9 @@ def synth_to_wav(text: str, wav_path: str, sample_rate: int = 24000, voice: str 
     subprocess.run([
         "say", "-o", aiff_path,
         "-v", voice,   # Use specified voice
-        "-r", "120",   # Slightly slower speech rate (was 180 for Alex)
-        "[[pbas .5]] " + text
+        "-r", "70",   # Slightly slower speech rate (was 180 for Alex)
+        ##"[[pbas .5]] " + text
+        text
     ], check=True)
 
     # Convert AIFF to WAV and add 0.5 seconds of silence padding at the end
