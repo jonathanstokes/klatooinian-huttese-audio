@@ -1,5 +1,5 @@
 # Suppress warnings first
-from .suppress_warnings import suppress_tts_loading_messages
+from ..common.suppress_warnings import suppress_tts_loading_messages
 suppress_tts_loading_messages()
 
 import argparse
@@ -10,8 +10,8 @@ from pathlib import Path
 import sounddevice as sd
 import soundfile as sf
 
-from .rewrite import rewrite_to_huttese
-from .fx import process_klatooinian
+from ..audio.translation import rewrite_to_huttese
+from ..audio.effects import process_klatooinian
 
 def play_wav(path: str):
     data, sr = sf.read(path, dtype="float32")
@@ -48,13 +48,13 @@ def main():
 
     # Import the appropriate synth module based on engine choice
     if args.engine == "kokoro":
-        from .synth_f5 import synth_to_wav
+        from ..audio.engines.kokoro import synth_to_wav
         engine_name = "Kokoro TTS"
     elif args.engine == "coqui":
-        from .synth import synth_to_wav
+        from ..audio.engines.coqui import synth_to_wav
         engine_name = "Coqui XTTS v2"
     else:  # simple
-        from .synth_simple import synth_to_wav
+        from ..audio.engines.simple import synth_to_wav
         engine_name = "macOS say"
 
     # Start timing
@@ -138,3 +138,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

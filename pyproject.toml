@@ -18,8 +18,8 @@ python-dotenv = "^1.1.1"
 pytest = "^7.4.0"
 
 [tool.poetry.scripts]
-huttese = "src.cli:main"
-huttese-repl = "src.interactive:main"
+huttese = "src.cli.audio_cli:main"
+huttese-repl = "src.cli.interactive:main"
 
 [build-system]
 requires = ["poetry-core"]
