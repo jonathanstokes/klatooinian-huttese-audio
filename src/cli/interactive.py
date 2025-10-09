@@ -41,10 +41,10 @@ def print_help():
     print("  <text>         - Speak text in Huttese")
     print("  help           - Show this help")
     print("  quit/exit/q    - Exit the program")
-    print("  engine <name>  - Set TTS engine: kokoro (default), coqui, simple")
+    print("  engine <name>  - Set TTS engine: simple (default), kokoro, coqui")
     print("  voice <name>   - Set voice (depends on engine)")
     print("  seed <n>       - Set rewrite seed (default: 42)")
-    print("  semitones <n>  - Set pitch shift (default: -5)")
+    print("  semitones <n>  - Set pitch shift (default: -2)")
     print("  tempo <n>      - Set speed multiplier (default: 0.9, 1.0=normal)")
     print("  verbose on/off - Toggle verbose timing mode (default: off)")
     print()
@@ -53,9 +53,9 @@ def print_help():
 def main():
     """Run interactive REPL."""
     # REPL state
-    engine = "kokoro"  # Default engine
-    voice = "am_michael"  # Default voice for kokoro
-    engine_name = "Kokoro TTS"
+    engine = "simple"  # Default engine
+    voice = "Lee"  # Default voice
+    engine_name = "macOS say"
     synth_to_wav = None
 
     # Print banner
@@ -63,8 +63,8 @@ def main():
 
     # Pre-load TTS model
     try:
-        from ..audio.engines.kokoro import synth_to_wav as kokoro_synth
-        synth_to_wav = kokoro_synth
+        from ..audio.engines.simple import synth_to_wav as simple_synth
+        synth_to_wav = simple_synth
         print("✓ Model loaded successfully!")
         print()
         print("Type a sentence and press Enter to hear it in Huttese.")
@@ -76,13 +76,14 @@ def main():
 
     # Other REPL state
     seed = 42
-    semitones = -5
-    grit_drive = 5
+    semitones = -2
+    grit_drive = 0
     grit_color = 10
     chorus_ms = 0
     grit_mode = "combo"  # Default to combo mode for gravelly without doubling
     tempo = 0.9  # default: 10% faster
     verbose = False  # verbose timing mode
+    strip_every_nth = 3  # default: strip every 3rd word
     
     # Temporary files
     tmp_dir = Path("/tmp/huttese_repl")
@@ -117,9 +118,9 @@ def main():
 
                     # Load appropriate synth module
                     if engine == "kokoro":
-                        from ..audio.engines.kokoro import synth_to_wav as kokoro_synth
+                        from ..audio.engines.simple import synth_to_wav as simple_synth
                         synth_to_wav = kokoro_synth
-                        engine_name = "Kokoro TTS"
+                        engine_name = "macOS say"
                         voice = "am_michael"  # Reset to default kokoro voice
                     elif engine == "coqui":
                         from ..audio.engines.coqui import synth_to_wav as coqui_synth
@@ -191,7 +192,7 @@ def main():
             if verbose:
                 print("  \033[2m⏱️  Starting rewrite...\033[0m")
             step_start = time.time()
-            huttese = rewrite_to_huttese(text, seed=seed)
+            huttese = rewrite_to_huttese(text, seed=seed, strip_every_nth=strip_every_nth)
             if verbose:
                 print(f"  \033[2m⏱️  Rewrite: {time.time() - step_start:.3f}s\033[0m")
             print(f"  \033[2m→ {huttese}\033[0m")

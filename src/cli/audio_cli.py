@@ -21,16 +21,16 @@ def play_wav(path: str):
 def main():
     ap = argparse.ArgumentParser(prog="huttese", description="English -> Huttese-ish -> Klatooinian timbre")
     ap.add_argument("text", nargs="*", help="Text to synthesize. If omitted, reads from stdin.")
-    ap.add_argument("--engine", type=str, default="kokoro",
+    ap.add_argument("--engine", type=str, default="simple",
                     choices=["kokoro", "coqui", "simple"],
                     help="TTS engine: kokoro (Kokoro TTS, fast GPU), coqui (XTTS v2, high quality), simple (macOS say, instant)")
-    ap.add_argument("--voice", type=str, default=None,
+    ap.add_argument("--voice", type=str, default="Lee",
                     help="Voice to use. Kokoro: am_michael (default), hm_omega, jm_kumo, etc. Simple: Alex (default), Zoe, Samantha, Daniel, etc.")
     ap.add_argument("--seed", type=int, default=42, help="Deterministic rewrite seed")
     ap.add_argument("--no-strip-stop-words", action="store_true", help="Disable stop word removal (keep all words)")
-    ap.add_argument("--strip-every-nth", type=int, default=0, help="Strip every Nth word (0=disabled, 3=every 3rd word, etc.)")
-    ap.add_argument("--semitones", type=int, default=-5, help="Pitch shift in semitones (formant-preserved)")
-    ap.add_argument("--grit-drive", type=int, default=5, help="Grit intensity (0=none, 1-10=amount)")
+    ap.add_argument("--strip-every-nth", type=int, default=3, help="Strip every Nth word (0=disabled, 3=every 3rd word, etc.)")
+    ap.add_argument("--semitones", type=int, default=-2, help="Pitch shift in semitones (formant-preserved)")
+    ap.add_argument("--grit-drive", type=int, default=0, help="Grit intensity (0=none, 1-10=amount)")
     ap.add_argument("--grit-color", type=int, default=10, help="Grit color/tone")
     ap.add_argument("--grit-mode", type=str, default="combo",
                     choices=["overdrive", "compression", "eq", "combo"],
