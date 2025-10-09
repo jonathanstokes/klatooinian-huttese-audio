@@ -58,7 +58,7 @@ def _get_literal_phrases():
     
     return phrases
 
-def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int = 0) -> str:
+def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int = 0, original_starts_with_literal: bool = False, original_ends_with_literal: bool = False) -> str:
     """
     Strip words from text to make it shorter.
 
@@ -66,6 +66,8 @@ def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int 
         text: Input text (may contain placeholders like §§§0§§§)
         strip_stop_words: If True, remove common English stop words
         strip_every_nth: If > 0, also remove every Nth word from remaining words
+        original_starts_with_literal: True if original text started with a literal phrase
+        original_ends_with_literal: True if original text ended with a literal phrase
 
     Returns:
         Text with words stripped, preserving placeholders and punctuation
@@ -89,6 +91,18 @@ def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int 
     if len(words) == 0:
         return text
 
+    # Helper function to check if a word is a placeholder
+    def is_placeholder(word):
+        word_clean = word.strip(".,!?;:")
+        return word_clean.startswith("§§§") and word_clean.endswith("§§§")
+
+    # Use the passed-in information about whether original text had literals at start/end
+    # (This was determined before placeholder replacement in rewrite_to_huttese)
+    
+    # Keep track of original words and which ones get stripped
+    original_words = words.copy()
+    stripped_words = []
+
     # Filter out stop words (but keep placeholders)
     if strip_stop_words:
         filtered_words = []
@@ -101,6 +115,8 @@ def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int 
                 word_clean = word.strip(".,!?;:").lower()
                 if word_clean not in STOP_WORDS:
                     filtered_words.append(word)
+                else:
+                    stripped_words.append(word)
         words = filtered_words
 
     # Apply Nth word stripping if requested
@@ -114,18 +130,49 @@ def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int 
             # Skip every Nth word (1-indexed, so i+1)
             elif (i + 1) % strip_every_nth != 0:
                 filtered_words.append(word)
+            else:
+                stripped_words.append(word)
         words = filtered_words
+
+    # Prevent literals from moving to start/end if they weren't there originally
+    if len(words) > 0:
+        result_starts_with_placeholder = is_placeholder(words[0])
+        result_ends_with_placeholder = is_placeholder(words[-1])
+        
+        # If placeholder moved to start, add back a word before it
+        if result_starts_with_placeholder and not original_starts_with_literal:
+            # Find first non-placeholder word from original that was stripped
+            for orig_word in original_words:
+                if not is_placeholder(orig_word) and orig_word in stripped_words:
+                    words.insert(0, orig_word)
+                    stripped_words.remove(orig_word)
+                    break
+        
+        # If placeholder moved to end, add back a word after it
+        if result_ends_with_placeholder and not original_ends_with_literal:
+            # Find last non-placeholder word from original that was stripped
+            for orig_word in reversed(original_words):
+                if not is_placeholder(orig_word) and orig_word in stripped_words:
+                    words.append(orig_word)
+                    stripped_words.remove(orig_word)
+                    break
 
     return " ".join(words) + trailing_punct
 
 
-def _swap_words(text: str) -> str:
+
+def _swap_words(text: str, original_starts_with_literal: bool = False, original_ends_with_literal: bool = False) -> str:
     """
     Swap words systematically to make word order less English-like.
     Swaps positions (2,3), (7,8), (12,13), etc. - every 5th word starting from position 2.
 
     Punctuation stays attached to the preceding word, except for trailing punctuation
     at the end of the string.
+    
+    Args:
+        text: Input text (may contain placeholders like §§§0§§§)
+        original_starts_with_literal: True if original text started with a literal phrase
+        original_ends_with_literal: True if original text ended with a literal phrase
     """
     # Extract trailing punctuation from the end
     trailing_punct = ""
@@ -144,6 +191,14 @@ def _swap_words(text: str) -> str:
     if len(words) < 2:
         return text_stripped + trailing_punct
     
+    # Helper function to check if a word is a placeholder
+    def is_placeholder(word):
+        word_clean = word.strip(".,!?;:")
+        return word_clean.startswith("§§§") and word_clean.endswith("§§§")
+    
+    # Remember original positions of placeholders
+    original_words = words.copy()
+    
     # Swap pairs: (1,2), (6,7), (11,12), (16,17), ... (0-indexed)
     # Pattern: positions 1+5n and 2+5n for n=0,1,2,...
     i = 1  # Start at position 1 (second word, 0-indexed)
@@ -152,7 +207,41 @@ def _swap_words(text: str) -> str:
         words[i], words[i+1] = words[i+1], words[i]
         i += 5  # Move to next swap position (5 words later)
     
+    # After swapping, check if placeholders are in the right positions
+    if len(words) > 0:
+        result_starts_with_placeholder = is_placeholder(words[0])
+        result_ends_with_placeholder = is_placeholder(words[-1])
+        
+        # If placeholder moved to start but shouldn't be there, swap it back with next word
+        if result_starts_with_placeholder and not original_starts_with_literal and len(words) > 1:
+            if not is_placeholder(words[1]):
+                words[0], words[1] = words[1], words[0]
+        
+        # If placeholder moved to end but shouldn't be there, swap it back with previous word
+        if result_ends_with_placeholder and not original_ends_with_literal and len(words) > 1:
+            if not is_placeholder(words[-2]):
+                words[-1], words[-2] = words[-2], words[-1]
+        
+        # If original ended with literal but result doesn't, find the placeholder and move it to end
+        if original_ends_with_literal and not result_ends_with_placeholder:
+            for i in range(len(words)):
+                if is_placeholder(words[i]):
+                    # Move this placeholder to the end
+                    placeholder = words.pop(i)
+                    words.append(placeholder)
+                    break
+        
+        # If original started with literal but result doesn't, find the placeholder and move it to start
+        if original_starts_with_literal and not result_starts_with_placeholder:
+            for i in range(len(words)):
+                if is_placeholder(words[i]):
+                    # Move this placeholder to the start
+                    placeholder = words.pop(i)
+                    words.insert(0, placeholder)
+                    break
+    
     return " ".join(words) + trailing_punct
+
 
 def _apply_huttese_transforms(s: str, rnd) -> str:
     """Apply the Huttese transformation rules to a string."""
@@ -232,6 +321,27 @@ def rewrite_to_huttese(
     
     # Second, replace literal phrases from environment variable
     literal_phrases = _get_literal_phrases()
+    
+    # Before replacing literals with placeholders, check if original text starts/ends with a literal
+    # This is needed so _strip_words can preserve the position of literals
+    original_starts_with_literal = False
+    original_ends_with_literal = False
+    
+    # Check for quoted text at start/end
+    if re.match(r'^["\']', text):
+        original_starts_with_literal = True
+    if re.search(r'["\'][.,!?;:]*$', text):
+        original_ends_with_literal = True
+    
+    # Check for literal phrases at start/end
+    for phrase in literal_phrases:
+        # Check start (case-insensitive, word boundary)
+        if re.match(r'^' + re.escape(phrase) + r'\b', text, flags=re.IGNORECASE):
+            original_starts_with_literal = True
+        # Check end (case-insensitive, word boundary, allow trailing punctuation)
+        if re.search(r'\b' + re.escape(phrase) + r'[.,!?;:]*$', text, flags=re.IGNORECASE):
+            original_ends_with_literal = True
+    
     for phrase in literal_phrases:
         # Case-insensitive match with word boundaries
         pattern = r'\b' + re.escape(phrase) + r'\b'
@@ -245,10 +355,12 @@ def rewrite_to_huttese(
         s = re.sub(pattern, save_literal, s, flags=re.IGNORECASE)
 
     # Strip words (stop words and/or every Nth word) before other transformations
-    s = _strip_words(s, strip_stop_words=strip_stop_words, strip_every_nth=strip_every_nth)
+    s = _strip_words(s, strip_stop_words=strip_stop_words, strip_every_nth=strip_every_nth,
+                     original_starts_with_literal=original_starts_with_literal,
+                     original_ends_with_literal=original_ends_with_literal)
 
     # Swap word order before phonetic transformations
-    s = _swap_words(s)
+    s = _swap_words(s, original_starts_with_literal=original_starts_with_literal, original_ends_with_literal=original_ends_with_literal)
 
     # Apply Huttese transformation to the remaining text
     s = s.lower()

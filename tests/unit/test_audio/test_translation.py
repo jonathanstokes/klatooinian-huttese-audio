@@ -302,3 +302,37 @@ def test_nth_word_stripping_preserves_literals_with_punctuation():
     # Clean up
     del os.environ["LITERAL_PHRASES"]
 
+
+def test_literal_position_preservation():
+    """Test that literals don't move to start/end when they weren't there originally."""
+    import os
+    
+    # Save original env var
+    original_env = os.environ.get("LITERAL_PHRASES")
+    
+    try:
+        os.environ["LITERAL_PHRASES"] = "Hendo"
+        
+        # Test 1: Literal in middle shouldn't move to start
+        result1 = rewrite_to_huttese("Tell Hendo to bring the plans", seed=42, strip_stop_words=True, strip_every_nth=2)
+        assert result1.split()[0].strip(".,!?;:") != "Hendo", f"Hendo shouldn't be at start: {result1}"
+        
+        # Test 2: Literal in middle shouldn't move to end
+        result2 = rewrite_to_huttese("The plans are with Hendo right now", seed=42, strip_stop_words=True, strip_every_nth=2)
+        assert result2.split()[-1].strip(".,!?;:") != "Hendo", f"Hendo shouldn't be at end: {result2}"
+        
+        # Test 3: Literal at end should stay at end
+        result3 = rewrite_to_huttese("I wish you a happy birthday, Hendo!", seed=42, strip_stop_words=True, strip_every_nth=3)
+        assert result3.split()[-1].strip(".,!?;:") == "Hendo", f"Hendo should be at end: {result3}"
+        
+        # Test 4: Literal at start should stay at start
+        result4 = rewrite_to_huttese("Hendo, bring me the plans quickly", seed=42, strip_stop_words=True, strip_every_nth=2)
+        assert result4.split()[0].strip(".,!?;:") == "Hendo", f"Hendo should be at start: {result4}"
+        
+    finally:
+        # Restore original env var
+        if original_env is None:
+            if "LITERAL_PHRASES" in os.environ:
+                del os.environ["LITERAL_PHRASES"]
+        else:
+            os.environ["LITERAL_PHRASES"] = original_env

@@ -74,6 +74,8 @@ def main():
     )
     if args.verbose:
         print(f"⏱️  Rewrite: {time.time() - step_start:.3f}s")
+        print(f"📝 Translated: {hut}")
+        print()
 
     if args.dry_run:
         print(hut)

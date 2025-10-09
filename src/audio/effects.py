@@ -82,8 +82,8 @@ def process_klatooinian(in_wav: str, out_wav: str, semitones: int = -3,
     # Add EQ (bass+3 treble-2)
     sox_cmd.extend(["bass", "+3", "treble", "-2"])
     
-    # Reduce output volume by 4dB
-    sox_cmd.extend(["gain", "-4"])
+    # Reduce output volume
+    sox_cmd.extend(["gain", "-8"])
     
     subprocess.run(sox_cmd, **subprocess_kwargs)
 
