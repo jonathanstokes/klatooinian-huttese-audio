@@ -107,8 +107,9 @@ def _strip_words(text: str, strip_stop_words: bool = True, strip_every_nth: int 
     if strip_every_nth > 0 and len(words) > 0:
         filtered_words = []
         for i, word in enumerate(words):
-            # Keep placeholders always
-            if word.startswith("§§§") and word.endswith("§§§"):
+            # Keep placeholders always (check for §§§ pattern, ignoring punctuation)
+            word_clean = word.strip(".,!?;:")
+            if word_clean.startswith("§§§") and word_clean.endswith("§§§"):
                 filtered_words.append(word)
             # Skip every Nth word (1-indexed, so i+1)
             elif (i + 1) % strip_every_nth != 0:

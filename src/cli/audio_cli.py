@@ -27,6 +27,8 @@ def main():
     ap.add_argument("--voice", type=str, default=None,
                     help="Voice to use. Kokoro: am_michael (default), hm_omega, jm_kumo, etc. Simple: Alex (default), Zoe, Samantha, Daniel, etc.")
     ap.add_argument("--seed", type=int, default=42, help="Deterministic rewrite seed")
+    ap.add_argument("--no-strip-stop-words", action="store_true", help="Disable stop word removal (keep all words)")
+    ap.add_argument("--strip-every-nth", type=int, default=0, help="Strip every Nth word (0=disabled, 3=every 3rd word, etc.)")
     ap.add_argument("--semitones", type=int, default=-5, help="Pitch shift in semitones (formant-preserved)")
     ap.add_argument("--grit-drive", type=int, default=5, help="Grit intensity (0=none, 1-10=amount)")
     ap.add_argument("--grit-color", type=int, default=10, help="Grit color/tone")
@@ -64,7 +66,12 @@ def main():
     if args.verbose:
         print("⏱️  Starting rewrite...")
     step_start = time.time()
-    hut = rewrite_to_huttese(raw_text, seed=args.seed)
+    hut = rewrite_to_huttese(
+        raw_text,
+        seed=args.seed,
+        strip_stop_words=not args.no_strip_stop_words,
+        strip_every_nth=args.strip_every_nth
+    )
     if args.verbose:
         print(f"⏱️  Rewrite: {time.time() - step_start:.3f}s")
 

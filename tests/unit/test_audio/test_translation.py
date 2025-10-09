@@ -279,3 +279,26 @@ def test_combined_stop_and_nth_word_stripping():
     # With both should be shorter than stop-only
     assert len(result_both.split()) <= len(result_stop_only.split()), \
         f"Combined should be shorter or equal: both={result_both}, stop_only={result_stop_only}"
+def test_nth_word_stripping_preserves_literals_with_punctuation():
+    """Test that Nth word stripping preserves literal phrases even when they have punctuation."""
+    import os
+    from src.audio.translation import rewrite_to_huttese
+
+    # Set up literal phrase
+    os.environ["LITERAL_PHRASES"] = "Hendo"
+
+    # Reload module
+    import importlib
+    import src.audio.translation
+    importlib.reload(src.audio.translation)
+    from src.audio.translation import rewrite_to_huttese
+
+    # Test with punctuation after literal phrase
+    result = rewrite_to_huttese("Happy birthday, Hendo, may you enjoy your day fully!", seed=42, strip_stop_words=True, strip_every_nth=3)
+
+    # "Hendo" should be preserved even though it would be in the 3rd position
+    assert "Hendo" in result, f"Literal phrase with punctuation should be preserved: {result}"
+
+    # Clean up
+    del os.environ["LITERAL_PHRASES"]
+
