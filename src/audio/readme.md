@@ -377,9 +377,3 @@ done
 
 ## Future Enhancements
 
-- [ ] Add preset system (`--preset jabba`, `--preset klatooinian`)
-- [ ] Fine-tune TTS model on Star Wars audio
-- [ ] Voice cloning from audio samples
-- [ ] Real-time audio streaming
-- [ ] Additional alien language styles
-
