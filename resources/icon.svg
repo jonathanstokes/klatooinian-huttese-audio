@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="#2C5F2D" stroke="#1A3A1B" stroke-width="8"/>
+  
+  <!-- Stylized alien speech/sound waves -->
+  <g transform="translate(256, 256)">
+    <!-- Center microphone/speaker symbol -->
+    <ellipse cx="0" cy="0" rx="60" ry="80" fill="#8FBC8F" stroke="#1A3A1B" stroke-width="6"/>
+    <ellipse cx="0" cy="0" rx="40" ry="60" fill="#2C5F2D"/>
+    
+    <!-- Sound waves emanating outward -->
+    <path d="M -120 -40 Q -140 0 -120 40" fill="none" stroke="#8FBC8F" stroke-width="12" stroke-linecap="round"/>
+    <path d="M -160 -60 Q -190 0 -160 60" fill="none" stroke="#8FBC8F" stroke-width="10" stroke-linecap="round"/>
+    <path d="M -200 -80 Q -240 0 -200 80" fill="none" stroke="#8FBC8F" stroke-width="8" stroke-linecap="round"/>
+    
+    <path d="M 120 -40 Q 140 0 120 40" fill="none" stroke="#8FBC8F" stroke-width="12" stroke-linecap="round"/>
+    <path d="M 160 -60 Q 190 0 160 60" fill="none" stroke="#8FBC8F" stroke-width="10" stroke-linecap="round"/>
+    <path d="M 200 -80 Q 240 0 200 80" fill="none" stroke="#8FBC8F" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  
+  <!-- "KH" text at bottom -->
+  <text x="256" y="420" font-family="Arial, sans-serif" font-size="120" font-weight="bold" 
+        fill="#8FBC8F" text-anchor="middle" stroke="#1A3A1B" stroke-width="3">KH</text>
+</svg>
+

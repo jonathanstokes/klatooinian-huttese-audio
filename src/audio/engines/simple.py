@@ -33,10 +33,11 @@ def synth_to_wav(text: str, wav_path: str, sample_rate: int = 24000, voice: str 
         text
     ], check=True)
 
-    # Convert AIFF to WAV and add 0.5 seconds of silence padding at the end
-    # This prevents the last word from being clipped during FX processing
+    # Convert AIFF to WAV with minimal padding
+    # Using --window-long in rubberband handles edge artifacts, so we only need
+    # minimal padding: 0.1s at start for safety, 0.5s at end to prevent tail clipping
     subprocess.run([
-        "sox", aiff_path, "-r", str(sample_rate), tmp_wav, "pad", "0", "0.5"
+        "sox", aiff_path, "-r", str(sample_rate), tmp_wav, "pad", "0.15", "0.5"
     ], check=True)
 
     # Move temp file to final destination
@@ -46,4 +47,3 @@ def synth_to_wav(text: str, wav_path: str, sample_rate: int = 24000, voice: str 
     Path(aiff_path).unlink(missing_ok=True)
 
     return wav_path
-

@@ -41,8 +41,10 @@ def process_klatooinian(in_wav: str, out_wav: str, semitones: int = -3,
     }
 
     # Pitch shift, preserve formants, adjust tempo
+    # Using --window-long to reduce edge artifacts that might cause clipping
     subprocess.run([
         "rubberband", "-t", str(tempo), "-p", str(semitones), "-F",
+        "--window-long",  # Use longer processing window to reduce edge artifacts
         "--quiet",  # Suppress rubberband progress output
         in_wav, tmp
     ], **subprocess_kwargs)

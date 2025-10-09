@@ -377,3 +377,5 @@ done
 
 ## Future Enhancements
 
+- [ ] Define a profile for each voice supported, that specifies the specifics of engine, voice, and effects parameters.
+- [ ] With a voice configuration, support overrides for mood or emotion (anger, sadness, etc.)
