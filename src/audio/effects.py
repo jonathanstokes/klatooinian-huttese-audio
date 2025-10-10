@@ -83,10 +83,16 @@ def process_klatooinian(in_wav: str, out_wav: str, semitones: int = -3,
 
     # Add EQ (bass+3 treble-2)
     sox_cmd.extend(["bass", "+3", "treble", "-2"])
-    
-    # Reduce output volume
-    sox_cmd.extend(["gain", "-2"])
-    
+
+    # Add brick-wall limiter to prevent clipping (especially important for laptop speakers)
+    # This compand acts as a limiter: very fast attack (0.001s), short release (0.1s)
+    # Soft knee limiting starting at -6dB, hard limiting at -0.5dB to prevent clipping
+    # Format: attack,decay soft-knee-dB:out-dB,hard-limit-dB:out-dB gain initial-volume delay
+    sox_cmd.extend(["compand", "0.001,0.1", "-6,-5,-0.5,-0.5", "0", "-90", "0.1"])
+
+    # Reduce output volume for additional headroom
+    sox_cmd.extend(["gain", "-3"])
+
     subprocess.run(sox_cmd, **subprocess_kwargs)
 
     Path(tmp).unlink(missing_ok=True)

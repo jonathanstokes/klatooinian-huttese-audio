@@ -216,8 +216,10 @@ class SynthesisWorker(QThread):
                     sys.stderr = old_stderr
                 
                 # Play audio
+                # Use larger blocksize to prevent buffer underruns in UI environment
+                # which can cause crackling on laptop speakers
                 data, sr = sf.read(str(tmp_fx), dtype="float32")
-                sd.play(data, sr)
+                sd.play(data, sr, blocksize=4096)
                 sd.wait()
                 
                 elapsed = time.time() - start_time
