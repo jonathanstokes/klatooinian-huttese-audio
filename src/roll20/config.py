@@ -15,12 +15,16 @@ load_dotenv()
 
 class Roll20Config:
     """Configuration for Roll20 integration."""
-    
+
     def __init__(self):
         self.username = os.getenv("ROLL20_USERNAME")
         self.password = os.getenv("ROLL20_PASSWORD")
         self.campaign_id = os.getenv("ROLL20_CAMPAIGN_ID")
-        
+
+        # Target users for whisper messages (comma-delimited)
+        target_users_str = os.getenv("ROLL20_TARGET_USERS", "")
+        self.target_users = [u.strip() for u in target_users_str.split(",") if u.strip()]
+
         # Validate required configuration
         if not self.username:
             raise ValueError("ROLL20_USERNAME environment variable is required")

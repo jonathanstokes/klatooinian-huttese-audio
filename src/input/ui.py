@@ -48,13 +48,15 @@ from ..common.suppress_warnings import suppress_tts_loading_messages
 suppress_tts_loading_messages()
 
 import time
+import asyncio
 from pathlib import Path
 from collections import deque
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QLineEdit, QPushButton, QDialog, QLabel, QMenuBar, QTextBrowser
+    QTextEdit, QLineEdit, QPushButton, QDialog, QLabel, QMenuBar, QTextBrowser,
+    QMessageBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtGui import QAction, QKeyEvent, QTextCursor, QIcon, QPixmap
 import sounddevice as sd
@@ -63,6 +65,9 @@ import soundfile as sf
 from ..audio.translation import rewrite_to_huttese
 from ..audio.effects import process_klatooinian
 from ..audio.engines.simple import synth_to_wav
+from ..roll20.service import Roll20Service, ServiceState
+from ..roll20.config import config as roll20_config
+from ..roll20.verbose import vprint
 
 
 # Unique identifier for single instance
@@ -227,6 +232,99 @@ class SynthesisWorker(QThread):
             self.error.emit(str(e))
 
 
+class Roll20Worker(QThread):
+    """Background thread for managing Roll20 service."""
+    state_changed = pyqtSignal(str)  # state_name
+    error = pyqtSignal(str)
+
+    def __init__(self, headless: bool = True):
+        super().__init__()
+        self.service = None
+        self.loop = None
+        self._running = True
+        self._last_state = None
+        self._headless = headless
+
+    def run(self):
+        """Run the Roll20 service in an asyncio event loop."""
+        try:
+            # Create a new event loop for this thread
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+
+            # Run the async main function
+            self.loop.run_until_complete(self._async_main())
+
+        except Exception as e:
+            self.error.emit(f"Roll20 error: {e}")
+        finally:
+            if self.loop:
+                self.loop.close()
+
+    async def _monitor_state(self):
+        """Monitor service state changes and emit signals."""
+        while self._running and self.service:
+            current_state = self.service.state
+            if current_state != self._last_state:
+                self._last_state = current_state
+                self.state_changed.emit(current_state.value)
+
+            # Check every 100ms for more responsive updates
+            await asyncio.sleep(0.1)
+
+    async def _async_main(self):
+        """Main async function that manages the service."""
+        try:
+            # Create the service
+            self.service = Roll20Service()
+
+            # Emit initial state
+            self._last_state = ServiceState.CLOSED
+            self.state_changed.emit(self._last_state.value)
+
+            # Start monitoring state changes in the background
+            monitor_task = asyncio.create_task(self._monitor_state())
+
+            # Open the service
+            # The monitor task will catch state changes during this
+            await self.service.open(headless=self._headless)
+
+            # Wait for the monitor task (it runs until _running is False)
+            await monitor_task
+
+        except Exception as e:
+            self.error.emit(f"Roll20 service error: {e}")
+        finally:
+            # Clean up
+            if self.service:
+                try:
+                    await self.service.close()
+                except:
+                    pass
+
+    def send_message(self, to_users: list[str], message: str):
+        """
+        Send a message to Roll20 users (thread-safe).
+
+        This can be called from the main UI thread and will safely
+        schedule the message to be sent on the worker's event loop.
+
+        Args:
+            to_users: List of Roll20 usernames to send to
+            message: The message text to send
+        """
+        if self.loop and self.service:
+            # Schedule the coroutine on the worker's event loop
+            asyncio.run_coroutine_threadsafe(
+                self.service.send(to_users, message),
+                self.loop
+            )
+
+    def stop(self):
+        """Stop the worker thread."""
+        self._running = False
+
+
 class SettingsDialog(QDialog):
     """Settings modal dialog."""
     
@@ -253,10 +351,10 @@ class SettingsDialog(QDialog):
 
 class HutteseUI(QMainWindow):
     """Main UI window for Klatooinian Huttese speech synthesis."""
-    
-    def __init__(self):
+
+    def __init__(self, headless: bool = True):
         super().__init__()
-        
+
         # Settings (using defaults from REPL)
         self.settings = {
             'engine': 'simple',
@@ -270,14 +368,18 @@ class HutteseUI(QMainWindow):
             'tempo': 0.9,
             'strip_every_nth': 3,
         }
-        
+
         # History of last N things said
         self.history = deque(maxlen=MAX_HISTORY_ITEMS)
-        
-        # Worker thread
+
+        # Worker thread for synthesis
         self.worker = None
-        
+
+        # Roll20 worker thread
+        self.roll20_worker = None
+
         self.init_ui()
+        self.init_roll20(headless=headless)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -347,7 +449,41 @@ class HutteseUI(QMainWindow):
         
         # Show loading message
         self.statusBar().showMessage("Loading TTS model...")
-        
+
+    def init_roll20(self, headless: bool = True):
+        """Initialize Roll20 service integration."""
+        # Create and start the Roll20 worker
+        self.roll20_worker = Roll20Worker(headless=headless)
+        self.roll20_worker.state_changed.connect(self.on_roll20_state_changed)
+        self.roll20_worker.error.connect(self.on_roll20_error)
+        self.roll20_worker.start()
+
+    def on_roll20_state_changed(self, state_name: str):
+        """Handle Roll20 service state changes."""
+        # Map state names to user-friendly messages
+        state_messages = {
+            "Closed": "Roll20: Not connected",
+            "Connecting": "Roll20: Connecting...",
+            "Ready": "Roll20: Ready",
+            "Sending": "Roll20: Sending message...",
+        }
+
+        message = state_messages.get(state_name, f"Roll20: {state_name}")
+        self.statusBar().showMessage(message)
+
+    def on_roll20_error(self, error_msg: str):
+        """Handle Roll20 service errors."""
+        # Show critical error dialog
+        QMessageBox.critical(
+            self,
+            "Roll20 Service Error",
+            f"Failed to initialize Roll20 service:\n\n{error_msg}\n\n"
+            "The application cannot function without the Roll20 service and will now close.",
+            QMessageBox.StandardButton.Ok
+        )
+        # Exit the application
+        QApplication.quit()
+
     def show_settings(self):
         """Show settings dialog."""
         dialog = SettingsDialog(self)
@@ -381,20 +517,30 @@ class HutteseUI(QMainWindow):
     def say_text(self):
         """Process and speak the input text."""
         text = self.input_field.text().strip()
-        
+
         if not text:
             return
-        
+
         # Add to input history
         self.input_field.add_to_history(text)
-        
+
         # Clear input field immediately for better responsiveness
         self.input_field.clear()
         self.input_field.setFocus()
-        
+
         # Show processing status
         self.statusBar().showMessage("Processing...")
-        
+
+        # Send to Roll20 in parallel with audio synthesis
+        if self.roll20_worker and roll20_config.target_users:
+            # Format the message for Roll20 (currently just the raw text)
+            formatted_message = text
+            vprint(f"\n[UI] Sending to Roll20:")
+            vprint(f"  Target users: {roll20_config.target_users}")
+            vprint(f"  Original text: {repr(text)}")
+            vprint(f"  Formatted message: {repr(formatted_message)}")
+            self.roll20_worker.send_message(roll20_config.target_users, formatted_message)
+
         # Start synthesis in background thread
         self.worker = SynthesisWorker(text, self.settings)
         self.worker.translation_ready.connect(self.on_translation_ready)
@@ -433,12 +579,19 @@ class HutteseUI(QMainWindow):
                 f'</a>'
                 f'</div>'
             )
-        
+
         self.history_log.setHtml(''.join(html_parts))
-        
+
         # Scroll to bottom
         scrollbar = self.history_log.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+
+    def closeEvent(self, event):
+        """Handle window close event to clean up Roll20 service."""
+        if self.roll20_worker:
+            self.roll20_worker.stop()
+            self.roll20_worker.wait(2000)  # Wait up to 2 seconds for cleanup
+        event.accept()
 
 
 class SingleInstanceApplication(QApplication):
@@ -495,21 +648,38 @@ class SingleInstanceApplication(QApplication):
 
 def main():
     """Run the Klatooinian Huttese UI application."""
+    # Parse command line arguments
+    headless = True
+    verbose = False
+
+    if "--headful" in sys.argv:
+        headless = False
+        print("Running Roll20 service in HEADFUL mode (browser visible)")
+        print("This is for debugging purposes.\n")
+
+    if "--verbose" in sys.argv:
+        verbose = True
+        print("Running in VERBOSE mode (detailed logging enabled)")
+        print("This is for debugging purposes.\n")
+        # Enable verbose logging in the roll20 module
+        from ..roll20.verbose import set_verbose
+        set_verbose(True)
+
     app = SingleInstanceApplication(sys.argv)
-    
+
     # If another instance is already running, exit
     if app.is_running:
         print("Klatooinian Huttese UI is already running. Focusing existing window...")
         sys.exit(0)
-    
+
     # Create and show main window
-    window = HutteseUI()
+    window = HutteseUI(headless=headless)
     app.window = window  # Store reference for single instance handling
     window.show()
-    
+
     # Update status after window is shown
     window.statusBar().showMessage("Ready", 2000)
-    
+
     sys.exit(app.exec())
 
 

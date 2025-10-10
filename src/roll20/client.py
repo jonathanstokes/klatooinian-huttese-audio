@@ -25,10 +25,7 @@ class Roll20Client:
         self._logged_in = False
         self._game_loaded = False
 
-        # Chat UI element references
-        self.chat_textarea = None
-        self.chat_send_button = None
-        self.speaking_as_dropdown = None
+        # We don't need element references anymore - we use JavaScript directly
 
     async def start(self, headless: bool = True):
         """
@@ -302,76 +299,61 @@ class Roll20Client:
         print("✓ Dialog dismissal complete")
 
     async def setup_chat_interface(self):
-        """Set up the chat interface by selecting the last character and getting element references."""
+        """Set up the chat interface by selecting the last character."""
         print("\nSetting up chat interface...")
 
-        # Find the "speaking as" dropdown
-        print("Looking for 'speaking as' dropdown...")
-        self.speaking_as_dropdown = await self.page.select("#speakingas")
-        if not self.speaking_as_dropdown:
-            raise Exception("Could not find #speakingas dropdown")
-        print("  ✓ Found #speakingas dropdown")
+        # Use JavaScript to get dropdown options and select the last one
+        print("Selecting last character from dropdown...")
 
-        # Wait a moment for the dropdown to be fully ready
-        await asyncio.sleep(1)
+        script = """
+            (function() {
+                var select = document.getElementById("speakingas");
+                if (!select) {
+                    return { success: false, error: "Dropdown not found" };
+                }
 
-        # Get all option elements
-        print("  Getting dropdown options...")
-        options = await self.page.query_selector_all("#speakingas option")
+                var options = select.options;
+                if (!options || options.length === 0) {
+                    return { success: false, error: "No options found" };
+                }
 
-        if not options or len(options) == 0:
-            raise Exception("Could not find any options in #speakingas dropdown")
+                // Get the last option
+                var lastOption = options[options.length - 1];
+                var lastValue = lastOption.value;
+                var lastText = lastOption.text;
 
-        print(f"  Found {len(options)} options")
+                // Select it
+                select.value = lastValue;
 
-        # Get the value of the last option
-        last_option = options[-1]
+                // Trigger change event
+                var event = new Event('change', { bubbles: true });
+                select.dispatchEvent(event);
 
-        # Get the value attribute - use attrs property directly
-        last_value = last_option.attrs.get("value", "")
+                // Also try jQuery if available
+                if (window.jQuery) {
+                    jQuery(select).trigger('change');
+                }
 
-        # Try to get the text content
-        try:
-            last_text = await last_option.text_all
-        except:
-            last_text = last_value
-
-        print(f"  Selecting last option: {last_text}")
-
-        # Set the select element's value using JavaScript
-        # This is more reliable than trying to click the option
-        script = f"""
-            var select = document.getElementById("speakingas");
-            select.value = "{last_value}";
-            
-            // Trigger change event so Roll20 knows the value changed
-            var event = new Event('change', {{ bubbles: true }});
-            select.dispatchEvent(event);
-            
-            // Also try triggering it the jQuery way in case Roll20 uses that
-            if (window.jQuery) {{
-                jQuery(select).trigger('change');
-            }}
+                return {
+                    success: true,
+                    value: lastValue,
+                    text: lastText,
+                    optionCount: options.length
+                };
+            })()
         """
 
-        await self.page.evaluate(script)
-        await asyncio.sleep(0.5)
-
-        print(f"  ✓ Selected: {last_text}")
-
-        # Get reference to the textarea
-        print("Getting reference to chat textarea...")
-        self.chat_textarea = await self.page.select("#textchat-input textarea")
-        if not self.chat_textarea:
-            raise Exception("Could not find chat textarea")
-        print("  ✓ Got chat textarea reference")
-
-        # Get reference to the send button
-        print("Getting reference to send button...")
-        self.chat_send_button = await self.page.select("#chatSendBtn")
-        if not self.chat_send_button:
-            raise Exception("Could not find #chatSendBtn")
-        print("  ✓ Got send button reference")
+        try:
+            result = await self.page.evaluate(script)
+            if result.get('success'):
+                print(f"  ✓ Found {result.get('optionCount')} options")
+                print(f"  ✓ Selected: {result.get('text')}")
+            else:
+                print(f"  Warning: {result.get('error')}")
+                print(f"  Continuing anyway - default selection may be fine")
+        except Exception as e:
+            print(f"  Warning: Could not select dropdown option: {e}")
+            print(f"  Continuing anyway - default selection may be fine")
 
         print("\n✓ Chat interface ready!")
 
@@ -380,45 +362,48 @@ class Roll20Client:
         print("\nVerifying chat UI elements...")
         print("(This may take a while as the page finishes loading...)")
 
-        # Try multiple times with increasing waits
-        max_attempts = 10
+        # Use JavaScript to check for elements - much faster and more reliable
+        # Try multiple times with shorter waits
+        max_attempts = 20
         for attempt in range(max_attempts):
             try:
-                # Check for the text chat input container
-                chat_input = await self.page.select("#textchat-input")
-                if not chat_input:
-                    raise Exception("Could not find #textchat-input element")
+                # Check each element individually using JavaScript
+                chat_input_exists = await self.page.evaluate('!!document.querySelector("#textchat-input")')
+                textarea_exists = await self.page.evaluate('!!document.querySelector("#textchat-input textarea")')
+                speaking_as_exists = await self.page.evaluate('!!document.querySelector("#speakingas")')
+                send_btn_exists = await self.page.evaluate('!!document.querySelector("#chatSendBtn")')
 
-                # Check for the textarea
-                textarea = await self.page.select("#textchat-input textarea")
-                if not textarea:
-                    raise Exception("Could not find textarea in #textchat-input")
+                all_found = chat_input_exists and textarea_exists and speaking_as_exists and send_btn_exists
 
-                # Check for the 'speaking as' dropdown
-                speaking_as = await self.page.select("#speakingas")
-                if not speaking_as:
-                    raise Exception("Could not find #speakingas dropdown")
+                if all_found:
+                    # All elements found!
+                    print("  ✓ Found #textchat-input")
+                    print("  ✓ Found textarea")
+                    print("  ✓ Found #speakingas dropdown")
+                    print("  ✓ Found #chatSendBtn")
+                    print("\n✓ All chat UI elements verified!")
+                    return True
+                else:
+                    # Show which elements are missing
+                    missing = []
+                    if not chat_input_exists: missing.append('#textchat-input')
+                    if not textarea_exists: missing.append('textarea')
+                    if not speaking_as_exists: missing.append('#speakingas')
+                    if not send_btn_exists: missing.append('#chatSendBtn')
 
-                # Check for the send button
-                send_button = await self.page.select("#chatSendBtn")
-                if not send_button:
-                    raise Exception("Could not find #chatSendBtn")
-
-                # All elements found!
-                print("  ✓ Found #textchat-input")
-                print("  ✓ Found textarea")
-                print("  ✓ Found #speakingas dropdown")
-                print("  ✓ Found #chatSendBtn")
-                print("\n✓ All chat UI elements verified!")
-                return True
+                    if attempt < max_attempts - 1:
+                        print(f"  Attempt {attempt + 1}/{max_attempts}: Missing {', '.join(missing)}, waiting 1 second...")
+                        await asyncio.sleep(1)
+                    else:
+                        raise Exception(f"Missing elements: {', '.join(missing)}")
 
             except Exception as e:
                 if attempt < max_attempts - 1:
-                    print(f"  Attempt {attempt + 1}/{max_attempts}: Chat UI not ready yet, waiting 3 seconds...")
-                    await asyncio.sleep(3)
+                    print(f"  Attempt {attempt + 1}/{max_attempts}: Error checking UI: {e}, waiting 1 second...")
+                    await asyncio.sleep(1)
                 else:
                     # Last attempt failed
-                    raise Exception(f"Chat UI did not load after {max_attempts} attempts. Last error: {e}")
+                    raise Exception(f"Chat UI elements not found after {max_attempts} attempts: {e}")
 
         return True
 
@@ -439,13 +424,12 @@ class Roll20Client:
 
         await self.launch_game()
 
-        # Start dismissing dialogs in parallel with chat UI verification
-        dialog_task = asyncio.create_task(self.dismiss_dialogs())
+        # Start dismissing dialogs in the background (don't wait for it)
+        asyncio.create_task(self.dismiss_dialogs())
 
         await self.verify_chat_ui()
 
-        # Wait for dialogs to finish dismissing
-        await dialog_task
+        # Set up chat interface immediately - dialogs can continue dismissing in background
         await self.setup_chat_interface()
 
         print("\n" + "=" * 60)
@@ -465,6 +449,3 @@ class Roll20Client:
             self.page = None
             self._logged_in = False
             self._game_loaded = False
-            self.chat_textarea = None
-            self.chat_send_button = None
-            self.speaking_as_dropdown = None

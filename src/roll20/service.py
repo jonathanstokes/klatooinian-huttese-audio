@@ -14,6 +14,7 @@ from typing import Optional
 
 from .client import Roll20Client
 from .message import send_message
+from .verbose import vprint
 
 
 class ServiceState(Enum):
@@ -152,15 +153,19 @@ class Roll20Service:
             while True:
                 # Wait for a message from the queue
                 to_users, message = await self._message_queue.get()
-                
+
+                vprint(f"\n[Service] Processing queued message:")
+                vprint(f"  To users: {to_users}")
+                vprint(f"  Message: {repr(message)}")
+
                 # Transition to Sending state
                 self._state = ServiceState.SENDING
-                
+
                 # Send the message to each user
                 for username in to_users:
-                    print(f"Sending message to {username}...")
+                    vprint(f"\n[Service] Sending to user '{username}'...")
                     await send_message(self._client, username, message)
-                    print(f"✓ Sent to {username}")
+                    vprint(f"  ✓ Sent to {username}")
                 
                 # Mark the task as done
                 self._message_queue.task_done()

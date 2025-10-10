@@ -6,7 +6,11 @@ This module handles:
 - Posting messages via the headless browser client
 """
 
+import asyncio
+import json
 from typing import TYPE_CHECKING
+
+from .verbose import vprint
 
 if TYPE_CHECKING:
     from .client import Roll20Client
@@ -23,7 +27,9 @@ def format_whisper(username: str, message: str) -> str:
     Returns:
         Formatted whisper command: /w "username" message
     """
-    return f'/w "{username}" {message}'
+    # Replace double-quotes with single-quotes in the message to avoid confusing Roll20's parser
+    sanitized_message = message.replace('"', "'")
+    return f'/w "{username}" {sanitized_message}'
 
 
 async def send_message(client: "Roll20Client", username: str, message: str) -> None:
@@ -37,9 +43,39 @@ async def send_message(client: "Roll20Client", username: str, message: str) -> N
     """
     formatted_message = format_whisper(username, message)
 
-    # Type the message into the chat textarea
-    await client.chat_textarea.send_keys(formatted_message)
+    vprint(f"\n[Message] Formatting and sending:")
+    vprint(f"  Username: {repr(username)}")
+    vprint(f"  Message: {repr(message)}")
+    vprint(f"  Formatted whisper: {repr(formatted_message)}")
 
-    # Click the send button
-    await client.chat_send_button.click()
+    # Use JavaScript to set the textarea value and click send
+    # This is more reliable than using nodriver's DOM methods
+    vprint(f"  Setting textarea value and clicking send...")
+
+    # Escape backslashes and single quotes for JavaScript string literal
+    # We use single quotes in JS so we only need to escape single quotes and backslashes
+    js_safe_message = formatted_message.replace('\\', '\\\\').replace("'", "\\'")
+
+    script = f"""
+        // Get the textarea
+        var textarea = document.querySelector("#textchat-input textarea");
+        if (!textarea) {{
+            throw new Error("Could not find chat textarea");
+        }}
+
+        // Clear and set the value
+        textarea.value = "";
+        textarea.value = '{js_safe_message}';
+
+        // Click the send button
+        var sendBtn = document.getElementById("chatSendBtn");
+        if (!sendBtn) {{
+            throw new Error("Could not find send button");
+        }}
+        sendBtn.click();
+    """
+
+    await client.page.evaluate(script)
+
+    vprint(f"  ✓ Message sent!")
 
