@@ -54,7 +54,7 @@ from collections import deque
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLineEdit, QPushButton, QDialog, QLabel, QMenuBar, QTextBrowser,
-    QMessageBox
+    QMessageBox, QComboBox, QFormLayout, QCheckBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
@@ -219,7 +219,8 @@ class SynthesisWorker(QThread):
                 # Use larger blocksize to prevent buffer underruns in UI environment
                 # which can cause crackling on laptop speakers
                 data, sr = sf.read(str(tmp_fx), dtype="float32")
-                sd.play(data, sr, blocksize=4096)
+                output_device = self.settings.get('output_device')
+                sd.play(data, sr, blocksize=4096, device=output_device)
                 sd.wait()
                 
                 elapsed = time.time() - start_time
@@ -329,33 +330,106 @@ class Roll20Worker(QThread):
 
 class SettingsDialog(QDialog):
     """Settings modal dialog."""
-    
-    def __init__(self, parent=None):
+
+    def __init__(self, current_settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.setMinimumWidth(300)
-        
+        self.setMinimumWidth(400)
+
+        self.current_settings = current_settings.copy()
+
         layout = QVBoxLayout()
-        
-        # Placeholder content
-        label = QLabel("Settings will be added here")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
-        
-        # Close button
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
-        
+
+        # Form layout for settings
+        form_layout = QFormLayout()
+
+        # Output Audio Device selector with refresh button
+        device_layout = QHBoxLayout()
+        self.device_combo = QComboBox()
+        self.populate_audio_devices()
+        device_layout.addWidget(self.device_combo, stretch=1)
+
+        refresh_btn = QPushButton("🔄")
+        refresh_btn.setToolTip("Refresh device list")
+        refresh_btn.setMaximumWidth(40)
+        refresh_btn.clicked.connect(self.refresh_devices)
+        device_layout.addWidget(refresh_btn)
+
+        form_layout.addRow("Output Audio Device:", device_layout)
+
+        layout.addLayout(form_layout)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.accept)
+        save_btn.setDefault(True)
+        button_layout.addWidget(save_btn)
+
+        layout.addLayout(button_layout)
+
         self.setLayout(layout)
+
+    def refresh_devices(self):
+        """Refresh the device list."""
+        # Remember current selection
+        current_device = self.device_combo.currentData()
+
+        # Clear and repopulate
+        self.device_combo.clear()
+        self.populate_audio_devices()
+
+        # Try to restore previous selection
+        if current_device is not None:
+            for i in range(self.device_combo.count()):
+                if self.device_combo.itemData(i) == current_device:
+                    self.device_combo.setCurrentIndex(i)
+                    break
+
+    def populate_audio_devices(self):
+        """Populate the audio device combo box with available output devices."""
+        # Add default option
+        self.device_combo.addItem("System Default", None)
+
+        # Query available devices
+        try:
+            devices = sd.query_devices()
+            for i, device in enumerate(devices):
+                # Only add devices with output channels
+                if device['max_output_channels'] > 0:
+                    self.device_combo.addItem(device['name'], i)
+        except Exception as e:
+            print(f"Error querying audio devices: {e}")
+
+        # Set current selection
+        current_device = self.current_settings.get('output_device')
+        if current_device is not None:
+            # Find the index in the combo box
+            for i in range(self.device_combo.count()):
+                if self.device_combo.itemData(i) == current_device:
+                    self.device_combo.setCurrentIndex(i)
+                    break
+
+    def get_settings(self):
+        """Return the updated settings."""
+        settings = self.current_settings.copy()
+        settings['output_device'] = self.device_combo.currentData()
+        return settings
 
 
 class HutteseUI(QMainWindow):
     """Main UI window for Klatooinian Huttese speech synthesis."""
 
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = True, demo_mode: bool = False):
         super().__init__()
+
+        self.demo_mode = demo_mode
 
         # Settings (using defaults from REPL)
         self.settings = {
@@ -369,6 +443,7 @@ class HutteseUI(QMainWindow):
             'grit_mode': 'combo',
             'tempo': 0.9,
             'strip_every_nth': 3,
+            'output_device': None,  # None = system default
         }
 
         # History of last N things said
@@ -425,7 +500,15 @@ class HutteseUI(QMainWindow):
         self.history_log.setOpenExternalLinks(False)  # Handle clicks internally
         self.history_log.anchorClicked.connect(self.on_history_item_clicked)
         layout.addWidget(self.history_log, stretch=1)  # stretch=1 makes it expand
-        
+
+        # Demo mode checkbox (only shown in demo mode)
+        if self.demo_mode:
+            self.suppress_gm_checkbox = QCheckBox("Suppress GM message")
+            self.suppress_gm_checkbox.setChecked(False)
+            layout.addWidget(self.suppress_gm_checkbox)
+        else:
+            self.suppress_gm_checkbox = None
+
         # Input field and Say button on same row - pinned to bottom
         input_layout = QHBoxLayout()
         
@@ -488,8 +571,10 @@ class HutteseUI(QMainWindow):
 
     def show_settings(self):
         """Show settings dialog."""
-        dialog = SettingsDialog(self)
-        dialog.exec()
+        dialog = SettingsDialog(self.settings, self)
+        if dialog.exec():
+            # User clicked Save
+            self.settings = dialog.get_settings()
     
     def on_input_changed(self, text):
         """Handle input field text changes to enable/disable Say button."""
@@ -537,11 +622,21 @@ class HutteseUI(QMainWindow):
         if self.roll20_worker and roll20_config.target_users:
             # Format the message for Roll20 (currently just the raw text)
             formatted_message = text
+
+            # Determine target users (filter out 'gm' if demo mode checkbox is checked)
+            target_users = roll20_config.target_users
+            if self.demo_mode and self.suppress_gm_checkbox and self.suppress_gm_checkbox.isChecked():
+                # Remove 'gm' from the target users list
+                target_users = [user for user in target_users if user.lower() != 'gm']
+                vprint(f"\n[UI] Demo mode: Suppressing GM message")
+
             vprint(f"\n[UI] Sending to Roll20:")
-            vprint(f"  Target users: {roll20_config.target_users}")
+            vprint(f"  Target users: {target_users}")
             vprint(f"  Original text: {repr(text)}")
             vprint(f"  Formatted message: {repr(formatted_message)}")
-            self.roll20_worker.send_message(roll20_config.target_users, formatted_message)
+
+            if target_users:  # Only send if there are users to send to
+                self.roll20_worker.send_message(target_users, formatted_message)
 
         # Start synthesis in background thread
         self.worker = SynthesisWorker(text, self.settings)
@@ -653,6 +748,7 @@ def main():
     # Parse command line arguments
     headless = True
     verbose = False
+    demo_mode = False
 
     if "--headful" in sys.argv:
         headless = False
@@ -667,6 +763,11 @@ def main():
         from ..roll20.verbose import set_verbose
         set_verbose(True)
 
+    if "--demo-mode" in sys.argv:
+        demo_mode = True
+        print("Running in DEMO MODE")
+        print("The 'Suppress GM message' checkbox will be available.\n")
+
     app = SingleInstanceApplication(sys.argv)
 
     # If another instance is already running, exit
@@ -675,7 +776,7 @@ def main():
         sys.exit(0)
 
     # Create and show main window
-    window = HutteseUI(headless=headless)
+    window = HutteseUI(headless=headless, demo_mode=demo_mode)
     app.window = window  # Store reference for single instance handling
     window.show()
 
