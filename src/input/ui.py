@@ -68,6 +68,7 @@ from ..audio.engines.simple import synth_to_wav
 from ..roll20.service import Roll20Service, ServiceState
 from ..roll20.config import config as roll20_config
 from ..roll20.verbose import vprint
+from ..config.settings import load_settings, save_settings
 
 
 # Unique identifier for single instance
@@ -431,20 +432,8 @@ class HutteseUI(QMainWindow):
 
         self.demo_mode = demo_mode
 
-        # Settings (using defaults from REPL)
-        self.settings = {
-            'engine': 'simple',
-            'voice': 'Lee',
-            'seed': 42,
-            'semitones': -2,
-            'grit_drive': 0,
-            'grit_color': 10,
-            'chorus_ms': 0,
-            'grit_mode': 'combo',
-            'tempo': 0.9,
-            'strip_every_nth': 3,
-            'output_device': None,  # None = system default
-        }
+        # Load settings from persistent storage
+        self.settings = load_settings()
 
         # History of last N things said
         self.history = deque(maxlen=MAX_HISTORY_ITEMS)
@@ -575,6 +564,8 @@ class HutteseUI(QMainWindow):
         if dialog.exec():
             # User clicked Save
             self.settings = dialog.get_settings()
+            # Persist settings to disk
+            save_settings(self.settings)
     
     def on_input_changed(self, text):
         """Handle input field text changes to enable/disable Say button."""
