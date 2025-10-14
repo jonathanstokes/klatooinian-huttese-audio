@@ -3,6 +3,11 @@ import shutil
 import os
 from pathlib import Path
 
+# Voice volume constants (in dB)
+VOICE_VOLUME_MIN_DB = -6  # Softest
+VOICE_VOLUME_MAX_DB = 0   # Loudest
+VOICE_VOLUME_DEFAULT_DB = -3  # Middle
+
 def ensure_tool(name: str):
     if shutil.which(name) is None:
         raise RuntimeError(f"Required tool '{name}' not found in PATH")
@@ -10,19 +15,22 @@ def ensure_tool(name: str):
 def process_klatooinian(in_wav: str, out_wav: str, semitones: int = -3,
                         grit_drive: int = 5, grit_color: int = 10,
                         chorus_ms: int = 20, grit_mode: str = "overdrive",
-                        tempo: float = 1.0, quiet: bool = True):
+                        tempo: float = 1.0, voice_volume_db: float = VOICE_VOLUME_DEFAULT_DB,
+                        quiet: bool = True):
     """
     rubberband for pitch/formant, sox for grit/chorus/EQ.
-    
-    Note: Sox requires chorus delay to be > 20ms. If chorus_ms is 0, 
-    the chorus effect is skipped entirely. If it's between 1-19, it's 
+
+    Note: Sox requires chorus delay to be > 20ms. If chorus_ms is 0,
+    the chorus effect is skipped entirely. If it's between 1-19, it's
     clamped to 20ms (the minimum sox allows).
-    
+
     If grit_drive is 0, the grit effect is skipped entirely for
     a cleaner, more natural sound.
-    
+
     tempo: Speed multiplier (1.0 = normal, 1.1 = 10% faster, 0.9 = 10% slower)
-    
+
+    voice_volume_db: Output volume in dB (default -3, range -6 to 0)
+
     grit_mode options:
     - "overdrive": Classic distortion (creates harmonics, "doubled" effect)
     - "compression": Compression for punch without harmonics
@@ -90,8 +98,8 @@ def process_klatooinian(in_wav: str, out_wav: str, semitones: int = -3,
     # Format: attack,decay soft-knee-dB:out-dB,hard-limit-dB:out-dB gain initial-volume delay
     sox_cmd.extend(["compand", "0.001,0.1", "-6,-5,-0.5,-0.5", "0", "-90", "0.1"])
 
-    # Reduce output volume for additional headroom
-    sox_cmd.extend(["gain", "-3"])
+    # Apply output volume control
+    sox_cmd.extend(["gain", str(voice_volume_db)])
 
     subprocess.run(sox_cmd, **subprocess_kwargs)
 

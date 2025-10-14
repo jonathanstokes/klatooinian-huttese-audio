@@ -11,25 +11,11 @@ VOWELS = "aeiou"
 CONS = "bcdfghjklmnpqrstvwxz"
 
 # Common English stop words that can be safely omitted
+# Reduced set - only the most essential words to keep output less aggressive
 STOP_WORDS = {
     "a", "an", "the",  # Articles
-    "is", "are", "was", "were", "be", "been", "being",  # Be verbs
-    "have", "has", "had", "having",  # Have verbs
-    "do", "does", "did", "doing",  # Do verbs
-    "will", "would", "shall", "should", "may", "might", "must", "can", "could",  # Modals
-    "am",  # First person be
-    "i", "you", "he", "she", "it", "we", "they",  # Pronouns
-    "me", "him", "her", "us", "them",  # Object pronouns
-    "my", "your", "his", "its", "our", "their",  # Possessive pronouns
-    "this", "that", "these", "those",  # Demonstratives
-    "of", "to", "in", "on", "at", "by", "for", "with", "from", "as",  # Prepositions
-    "into", "onto", "upon", "about", "above", "below", "between", "through",  # More prepositions
-    "and", "but", "or", "nor", "so", "yet",  # Conjunctions
-    "if", "then", "than", "when", "where", "while", "because",  # Subordinating conjunctions
-    "not", "no",  # Negations
-    "all", "any", "some", "each", "every", "both", "few", "more", "most", "other", "such",  # Quantifiers
-    "just", "only", "very", "too", "also",  # Adverbs
-    "what", "which", "who", "whom", "whose", "why", "how",  # Question words
+    "i", "you", "he", "she", "it", "we", "they",  # Basic subject pronouns
+    "of", "to", "in", "on", "at",  # Most common prepositions
 }
 
 def _rng(seed: int):

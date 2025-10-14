@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, Any
 import sounddevice as sd
 from platformdirs import user_config_dir
+from ..audio.effects import VOICE_VOLUME_DEFAULT_DB
 
 
 # Application name for config directory
@@ -28,6 +29,7 @@ DEFAULT_SETTINGS = {
     'tempo': 0.9,
     'strip_every_nth': 3,
     'output_device': None,  # None = system default
+    'voice_volume_db': VOICE_VOLUME_DEFAULT_DB,  # -3 dB (middle of -6 to 0 range)
 }
 
 

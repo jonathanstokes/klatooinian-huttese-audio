@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Optional
 
 import nodriver as uc
+from platformdirs import user_cache_dir
+import hashlib
 
 from .config import config
 
@@ -27,8 +29,37 @@ class Roll20Client:
         self._logged_in = False
         self._game_loaded = False
         self._headless = True  # Track headless mode for error handling
+        self._background_tasks: list[asyncio.Task] = []  # Track background tasks for cleanup
 
         # We don't need element references anymore - we use JavaScript directly
+
+    def _get_user_data_dir(self) -> str:
+        """
+        Get the user data directory for the current Roll20 username.
+        
+        This ensures browser session state (cookies, localStorage, etc.) is:
+        - Persisted between runs
+        - Isolated per username
+        - Cleared when username changes
+        
+        Returns:
+            Path to the user data directory
+        """
+        # Use platformdirs to get a proper cache directory
+        app_cache_dir = user_cache_dir("klatooinian-huttese-audio", "jonathanstokes")
+        
+        # Create a safe directory name from the username
+        # Use hash to avoid filesystem issues with special characters
+        username_hash = hashlib.md5(config.username.encode()).hexdigest()[:8]
+        safe_username = "".join(c if c.isalnum() else "_" for c in config.username)
+        
+        # Combine readable name with hash for uniqueness
+        user_dir = Path(app_cache_dir) / "roll20_sessions" / f"{safe_username}_{username_hash}"
+        
+        # Create directory if it doesn't exist
+        user_dir.mkdir(parents=True, exist_ok=True)
+        
+        return str(user_dir)
 
     async def capture_screenshot(self, filename: Optional[str] = None) -> Optional[str]:
         """
@@ -161,11 +192,15 @@ class Roll20Client:
                 '--allow-running-insecure-content',
             ])
 
-        # Create config
+        # Create config with user data directory for session persistence
+        user_data_dir = self._get_user_data_dir()
+        print(f"Using user data directory: {user_data_dir}")
+        
         config = uc.Config(
             headless=headless,
             prefs=prefs,
             browser_args=browser_args if browser_args else None,
+            user_data_dir=user_data_dir,
         )
 
         self.browser = await uc.start(config)
@@ -608,7 +643,8 @@ class Roll20Client:
             await self.launch_game()
 
             # Start dismissing dialogs in the background (don't wait for it)
-            asyncio.create_task(self.dismiss_dialogs())
+            dialog_task = asyncio.create_task(self.dismiss_dialogs())
+            self._background_tasks.append(dialog_task)
 
             await self.verify_chat_ui()
 
@@ -647,15 +683,45 @@ class Roll20Client:
             raise
 
     async def close(self):
-        """Close the browser."""
+        """Close the browser gracefully."""
         if self.browser:
-            print("\nClosing browser...")
+            print("\nClosing browser gracefully...")
             try:
+                # Cancel any background tasks first
+                if self._background_tasks:
+                    print("  Cancelling background tasks...")
+                    for task in self._background_tasks:
+                        if not task.done():
+                            task.cancel()
+                    # Wait for tasks to be cancelled
+                    await asyncio.gather(*self._background_tasks, return_exceptions=True)
+                    self._background_tasks.clear()
+                    print("  ✓ Background tasks cancelled")
+                
+                # Give the browser a moment to finish any pending operations
+                await asyncio.sleep(0.5)
+                
+                # Try to close the page first (more graceful)
+                if self.page:
+                    try:
+                        await self.page.close()
+                        print("  ✓ Page closed")
+                    except Exception as e:
+                        print(f"  Note: Could not close page gracefully: {e}")
+                
+                # Give browser time to process the page close
+                await asyncio.sleep(0.5)
+                
+                # Now stop the browser
                 # browser.stop() is not async in nodriver, just call it directly
                 self.browser.stop()
+                print("  ✓ Browser stopped")
+                
             except Exception as e:
-                print(f"Error closing browser: {e}")
-            self.browser = None
-            self.page = None
-            self._logged_in = False
-            self._game_loaded = False
+                print(f"  Error during browser shutdown: {e}")
+            finally:
+                self.browser = None
+                self.page = None
+                self._logged_in = False
+                self._game_loaded = False
+                print("  ✓ Browser cleanup complete")

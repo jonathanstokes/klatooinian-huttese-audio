@@ -54,7 +54,7 @@ from collections import deque
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLineEdit, QPushButton, QDialog, QLabel, QMenuBar, QTextBrowser,
-    QMessageBox, QComboBox, QFormLayout, QCheckBox
+    QMessageBox, QComboBox, QFormLayout, QCheckBox, QSlider
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
@@ -63,7 +63,12 @@ import sounddevice as sd
 import soundfile as sf
 
 from ..audio.translation import rewrite_to_huttese
-from ..audio.effects import process_klatooinian
+from ..audio.effects import (
+    process_klatooinian,
+    VOICE_VOLUME_MIN_DB,
+    VOICE_VOLUME_MAX_DB,
+    VOICE_VOLUME_DEFAULT_DB
+)
 from ..audio.engines.simple import synth_to_wav
 from ..roll20.service import Roll20Service, ServiceState
 from ..roll20.config import config as roll20_config
@@ -73,6 +78,11 @@ from ..config.settings import load_settings, save_settings
 
 # Unique identifier for single instance
 SINGLE_INSTANCE_ID = "klatooinian-huttese-ui-single-instance"
+
+
+# Delay (in milliseconds) before sending message to Roll20
+# This allows audio synthesis to start before the Roll20 message is sent
+ROLL20_MESSAGE_DELAY_MS = 750
 
 # Maximum number of history items to keep
 MAX_HISTORY_ITEMS = 30
@@ -209,6 +219,7 @@ class SynthesisWorker(QThread):
                         chorus_ms=self.settings.get('chorus_ms', 0),
                         grit_mode=self.settings.get('grit_mode', 'combo'),
                         tempo=self.settings.get('tempo', 0.9),
+                        voice_volume_db=self.settings.get('voice_volume_db', VOICE_VOLUME_DEFAULT_DB),
                     )
                 finally:
                     sys.stdout.close()
@@ -359,6 +370,28 @@ class SettingsDialog(QDialog):
 
         form_layout.addRow("Output Audio Device:", device_layout)
 
+        # Voice Volume slider
+        volume_layout = QHBoxLayout()
+
+        # Label on the left
+        softest_label = QLabel("Softest")
+        volume_layout.addWidget(softest_label)
+
+        # Slider in the middle
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setMinimum(int(VOICE_VOLUME_MIN_DB * 10))  # -60 (representing -6.0 dB)
+        self.volume_slider.setMaximum(int(VOICE_VOLUME_MAX_DB * 10))  # 0 (representing 0.0 dB)
+        self.volume_slider.setValue(int(self.current_settings.get('voice_volume_db', VOICE_VOLUME_DEFAULT_DB) * 10))
+        self.volume_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.volume_slider.setTickInterval(10)  # Tick every 1 dB
+        volume_layout.addWidget(self.volume_slider, stretch=1)
+
+        # Label on the right
+        loudest_label = QLabel("Loudest")
+        volume_layout.addWidget(loudest_label)
+
+        form_layout.addRow("Voice Volume:", volume_layout)
+
         layout.addLayout(form_layout)
 
         # Buttons
@@ -421,6 +454,7 @@ class SettingsDialog(QDialog):
         """Return the updated settings."""
         settings = self.current_settings.copy()
         settings['output_device'] = self.device_combo.currentData()
+        settings['voice_volume_db'] = self.volume_slider.value() / 10.0  # Convert back to dB
         return settings
 
 
@@ -627,7 +661,9 @@ class HutteseUI(QMainWindow):
             vprint(f"  Formatted message: {repr(formatted_message)}")
 
             if target_users:  # Only send if there are users to send to
-                self.roll20_worker.send_message(target_users, formatted_message)
+                # Delay the Roll20 message to allow audio synthesis to start first
+                QTimer.singleShot(ROLL20_MESSAGE_DELAY_MS, 
+                                lambda: self.roll20_worker.send_message(target_users, formatted_message))
 
         # Start synthesis in background thread
         self.worker = SynthesisWorker(text, self.settings)
@@ -677,8 +713,13 @@ class HutteseUI(QMainWindow):
     def closeEvent(self, event):
         """Handle window close event to clean up Roll20 service."""
         if self.roll20_worker:
+            vprint("\n[UI] Shutting down Roll20 service...")
             self.roll20_worker.stop()
-            self.roll20_worker.wait(2000)  # Wait up to 2 seconds for cleanup
+            # Wait up to 5 seconds for graceful cleanup
+            if not self.roll20_worker.wait(5000):
+                vprint("[UI] Warning: Roll20 worker did not stop gracefully")
+            else:
+                vprint("[UI] Roll20 service stopped gracefully")
         event.accept()
 
 
