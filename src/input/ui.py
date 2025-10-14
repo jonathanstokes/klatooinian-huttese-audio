@@ -252,7 +252,7 @@ class Roll20Worker(QThread):
     state_changed = pyqtSignal(str)  # state_name
     error = pyqtSignal(str)
 
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = False):
         super().__init__()
         self.service = None
         self.loop = None
@@ -461,7 +461,7 @@ class SettingsDialog(QDialog):
 class HutteseUI(QMainWindow):
     """Main UI window for Klatooinian Huttese speech synthesis."""
 
-    def __init__(self, headless: bool = True, demo_mode: bool = False):
+    def __init__(self, headless: bool = False, demo_mode: bool = False):
         super().__init__()
 
         self.demo_mode = demo_mode
@@ -558,7 +558,7 @@ class HutteseUI(QMainWindow):
         # Show loading message
         self.statusBar().showMessage("Loading TTS model...")
 
-    def init_roll20(self, headless: bool = True):
+    def init_roll20(self, headless: bool = False):
         """Initialize Roll20 service integration."""
         # Create and start the Roll20 worker
         self.roll20_worker = Roll20Worker(headless=headless)
@@ -778,14 +778,14 @@ class SingleInstanceApplication(QApplication):
 def main():
     """Run the Klatooinian Huttese UI application."""
     # Parse command line arguments
-    headless = True
+    headless = False  # Default to headful mode (browser visible)
     verbose = False
     demo_mode = False
 
-    if "--headful" in sys.argv:
-        headless = False
-        print("Running Roll20 service in HEADFUL mode (browser visible)")
-        print("This is for debugging purposes.\n")
+    if "--headless" in sys.argv:
+        headless = True
+        print("Running Roll20 service in HEADLESS mode (browser hidden)")
+        print("Note: Cloudflare may block headless browsers.\n")
 
     if "--verbose" in sys.argv:
         verbose = True
