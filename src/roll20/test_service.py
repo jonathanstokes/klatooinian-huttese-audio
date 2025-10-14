@@ -7,8 +7,8 @@ This script tests the Roll20 service by:
 3. Closing the service
 
 Usage:
-    python -m src.roll20.test_service              # Run in headless mode
-    python -m src.roll20.test_service --headful    # Run with visible browser (for debugging)
+    python -m src.roll20.test_service              # Run in headful mode (default, browser visible)
+    python -m src.roll20.test_service --headless   # Run in headless mode (may be blocked by Cloudflare)
 """
 
 import asyncio
@@ -19,21 +19,21 @@ from .service import Roll20Service
 async def main():
     """Test the Roll20 service."""
     
-    # Parse command line arguments
-    headless = True
-    if "--headful" in sys.argv:
-        headless = False
-    
+    # Parse command line arguments - default is headful now
+    headless = False
+    if "--headless" in sys.argv:
+        headless = True
+
     service = Roll20Service()
-    
+
     try:
         print("=" * 60)
         print("Roll20 Service Test")
         print("=" * 60)
-        
+
         if headless:
             print("\nRunning in HEADLESS mode")
-            print("Use --headful flag to see the browser window\n")
+            print("Note: Cloudflare may block headless browsers.\n")
         else:
             print("\nRunning in HEADFUL mode (browser visible)")
             print("If Cloudflare challenges appear, complete them manually.\n")

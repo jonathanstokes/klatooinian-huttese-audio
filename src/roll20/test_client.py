@@ -8,8 +8,8 @@ This script tests the Roll20 integration by:
 4. Verifying the chat UI is present
 
 Usage:
-    python -m src.roll20.test_client              # Run in headless mode
-    python -m src.roll20.test_client --headful    # Run with visible browser (for debugging)
+    python -m src.roll20.test_client              # Run in headful mode (default, browser visible)
+    python -m src.roll20.test_client --headless   # Run in headless mode (may be blocked by Cloudflare)
 """
 
 import asyncio
@@ -20,21 +20,21 @@ from .client import Roll20Client
 async def main():
     """Test the Roll20 client initialization."""
     
-    # Parse command line arguments
-    headless = True
-    if "--headful" in sys.argv:
-        headless = False
-    
+    # Parse command line arguments - default is headful now
+    headless = False
+    if "--headless" in sys.argv:
+        headless = True
+
     client = Roll20Client()
-    
+
     try:
         print("=" * 60)
         print("Roll20 Client Test")
         print("=" * 60)
-        
+
         if headless:
             print("\nRunning in HEADLESS mode")
-            print("Use --headful flag to see the browser window\n")
+            print("Note: Cloudflare may block headless browsers.\n")
         else:
             print("\nRunning in HEADFUL mode (browser visible)")
             print("If Cloudflare challenges appear, complete them manually.\n")

@@ -9,6 +9,8 @@ This module handles:
 """
 
 import asyncio
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import nodriver as uc
@@ -24,21 +26,117 @@ class Roll20Client:
         self.page: Optional[uc.Tab] = None
         self._logged_in = False
         self._game_loaded = False
+        self._headless = True  # Track headless mode for error handling
 
         # We don't need element references anymore - we use JavaScript directly
 
-    async def start(self, headless: bool = True):
+    async def capture_screenshot(self, filename: Optional[str] = None) -> Optional[str]:
+        """
+        Capture a screenshot of the current page.
+
+        Args:
+            filename: Optional filename. If not provided, uses timestamp.
+
+        Returns:
+            Path to the saved screenshot, or None if capture failed.
+        """
+        if not self.page:
+            print("Cannot capture screenshot: no page loaded")
+            return None
+
+        try:
+            # Create screenshots directory if it doesn't exist
+            screenshots_dir = Path("screenshots")
+            screenshots_dir.mkdir(exist_ok=True)
+
+            # Generate filename with timestamp if not provided
+            if filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"roll20_error_{timestamp}.png"
+
+            # Ensure .png extension
+            if not filename.endswith('.png'):
+                filename += '.png'
+
+            filepath = screenshots_dir / filename
+
+            print(f"Capturing screenshot to: {filepath}")
+            await self.page.save_screenshot(str(filepath))
+            print(f"✓ Screenshot saved: {filepath}")
+
+            return str(filepath)
+
+        except Exception as e:
+            print(f"Failed to capture screenshot: {e}")
+            return None
+
+    async def capture_dom(self, filename: Optional[str] = None) -> Optional[str]:
+        """
+        Capture the DOM (HTML) of the current page.
+
+        Args:
+            filename: Optional filename. If not provided, uses timestamp.
+
+        Returns:
+            Path to the saved HTML file, or None if capture failed.
+        """
+        if not self.page:
+            print("Cannot capture DOM: no page loaded")
+            return None
+
+        try:
+            # Create screenshots directory if it doesn't exist (reuse same dir)
+            screenshots_dir = Path("screenshots")
+            screenshots_dir.mkdir(exist_ok=True)
+
+            # Generate filename with timestamp if not provided
+            if filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"roll20_error_{timestamp}.html"
+
+            # Ensure .html extension
+            if not filename.endswith('.html'):
+                filename += '.html'
+
+            filepath = screenshots_dir / filename
+
+            print(f"Capturing DOM to: {filepath}")
+
+            # Get the page HTML
+            html = await self.page.get_content()
+
+            # Save to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(html)
+
+            print(f"✓ DOM saved: {filepath}")
+
+            return str(filepath)
+
+        except Exception as e:
+            print(f"Failed to capture DOM: {e}")
+            return None
+
+    async def start(self, headless: bool = False):
         """
         Start the browser and navigate to Roll20.
 
         Args:
-            headless: Whether to run in headless mode. Set to False if you need
-                     to manually intervene for Cloudflare challenges.
+            headless: Whether to run in headless mode. Default is False (headful)
+                     because Cloudflare detection is more reliable with a visible browser.
+                     Set to True to run headless, but note that Cloudflare may block it.
 
         Returns:
             True if already logged in, False if login is needed
         """
-        print(f"Starting browser (headless={headless})...")
+        self._headless = headless
+
+        if headless:
+            print(f"Starting browser in HEADLESS mode...")
+            print("Note: Cloudflare may block headless browsers. If you encounter issues,")
+            print("try running in headful mode (headless=False).")
+        else:
+            print(f"Starting browser in HEADFUL mode (browser will be visible)...")
 
         # Chrome preferences to disable password manager
         prefs = {
@@ -46,10 +144,28 @@ class Roll20Client:
             'profile.password_manager_enabled': False,
         }
 
+        # Browser arguments for better headless mode and Cloudflare bypass
+        browser_args = []
+
+        if headless:
+            # Use new headless mode which is harder to detect
+            browser_args.extend([
+                '--headless=new',
+                # Additional args to make headless mode less detectable
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--allow-running-insecure-content',
+            ])
+
         # Create config
         config = uc.Config(
             headless=headless,
             prefs=prefs,
+            browser_args=browser_args if browser_args else None,
         )
 
         self.browser = await uc.start(config)
@@ -190,27 +306,91 @@ class Roll20Client:
             await asyncio.sleep(15)
             current_url = self.page.url
 
-        # Wait for the URL to change to the editor
-        print("Waiting for game editor to load...")
-        max_wait = 30
+        # Wait for the URL to change FROM setcampaign to the actual editor
+        # The setcampaign URL is a redirect page, not the actual editor
+        print("Waiting for redirect from setcampaign to actual editor...")
+        max_wait = 60  # Increased wait time for headless mode
         waited = 0
         while waited < max_wait:
             current_url = self.page.url
-            if "editor" in current_url and "/login" not in current_url:
+            # We want the editor URL but NOT the setcampaign URL
+            if "editor" in current_url and "setcampaign" not in current_url and "/login" not in current_url:
                 print(f"✓ Editor loaded! URL: {current_url}")
                 break
+            if waited % 5 == 0:  # Print status every 5 seconds
+                print(f"  Still waiting... Current URL: {current_url}")
             await asyncio.sleep(1)
             waited += 1
 
         current_url = self.page.url
-        if "editor" not in current_url or "/login" in current_url:
+
+        # Check if we're still on setcampaign (redirect didn't happen)
+        if "setcampaign" in current_url:
+            print(f"Warning: Still on setcampaign URL after {max_wait}s: {current_url}")
+            print("The page may not have redirected automatically.")
+
+            # Try to find and click a "Join Game" or "Launch" button
+            print("Looking for a button to click to enter the game...")
+
+            # Check for common button texts
+            button_texts = ["Join Game", "Launch", "Play Now", "Enter Game", "Continue"]
+            button_found = False
+
+            for button_text in button_texts:
+                try:
+                    # Try to find button by text content
+                    script = f"""
+                        (function() {{
+                            var buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+                            var button = buttons.find(b => b.textContent.includes('{button_text}') || b.value === '{button_text}');
+                            if (button) {{
+                                return {{ found: true, text: button.textContent || button.value }};
+                            }}
+                            return {{ found: false }};
+                        }})()
+                    """
+                    result = await self.page.evaluate(script)
+                    if result.get('found'):
+                        print(f"  Found button: {result.get('text')}")
+                        # Click it
+                        click_script = f"""
+                            (function() {{
+                                var buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+                                var button = buttons.find(b => b.textContent.includes('{button_text}') || b.value === '{button_text}');
+                                if (button) {{
+                                    button.click();
+                                    return true;
+                                }}
+                                return false;
+                            }})()
+                        """
+                        clicked = await self.page.evaluate(click_script)
+                        if clicked:
+                            print(f"  ✓ Clicked button")
+                            button_found = True
+                            # Wait for redirect after clicking
+                            await asyncio.sleep(10)
+                            current_url = self.page.url
+                            if "setcampaign" not in current_url:
+                                print(f"  ✓ Redirected to: {current_url}")
+                                break
+                except Exception as e:
+                    print(f"  Error checking for '{button_text}': {e}")
+
+            if not button_found:
+                print("  No button found. The page might load the editor in place.")
+                print("  Continuing anyway - chat UI check will determine if we're ready.")
+
+        elif "editor" not in current_url or "/login" in current_url:
             raise Exception(f"Editor did not load. Current URL: {current_url}")
+        else:
+            print(f"✓ Successfully redirected to editor: {current_url}")
 
         self._game_loaded = True
         print("✓ Game loaded successfully!")
 
 
-    async def _dismiss_dialog_with_retry(self, dialog_name: str, content_selector: str, button_selector: str, max_attempts: int = 8):
+    async def _dismiss_dialog_with_retry(self, dialog_name: str, content_selector: str, button_selector: str, max_attempts: int = 15):
         """
         Dismiss a dialog with retry logic.
 
@@ -218,7 +398,7 @@ class Roll20Client:
             dialog_name: Name of the dialog for logging
             content_selector: Selector for the dialog content to wait for
             button_selector: Selector for the button to click
-            max_attempts: Maximum number of attempts
+            max_attempts: Maximum number of attempts (default 15, increased for headless mode)
         """
         for attempt in range(max_attempts):
             try:
@@ -364,7 +544,8 @@ class Roll20Client:
 
         # Use JavaScript to check for elements - much faster and more reliable
         # Try multiple times with shorter waits
-        max_attempts = 20
+        # Increased for headless mode where things can be slower to render
+        max_attempts = 40
         for attempt in range(max_attempts):
             try:
                 # Check each element individually using JavaScript
@@ -407,34 +588,63 @@ class Roll20Client:
 
         return True
 
-    async def initialize(self, headless: bool = True):
+    async def initialize(self, headless: bool = False):
         """
         Complete initialization: start browser, login, and launch game.
 
         Args:
-            headless: Whether to run in headless mode. Set to False if you need
-                     to manually intervene for Cloudflare challenges.
+            headless: Whether to run in headless mode. Default is False (headful)
+                     because Cloudflare detection is more reliable with a visible browser.
+                     Set to True to run headless, but note that Cloudflare may block it.
         """
-        already_logged_in = await self.start(headless=headless)
+        try:
+            already_logged_in = await self.start(headless=headless)
 
-        if not already_logged_in:
+            if not already_logged_in:
+                await self.login()
+
             await self.login()
 
-        await self.login()
+            await self.launch_game()
 
-        await self.launch_game()
+            # Start dismissing dialogs in the background (don't wait for it)
+            asyncio.create_task(self.dismiss_dialogs())
 
-        # Start dismissing dialogs in the background (don't wait for it)
-        asyncio.create_task(self.dismiss_dialogs())
+            await self.verify_chat_ui()
 
-        await self.verify_chat_ui()
+            # Set up chat interface immediately - dialogs can continue dismissing in background
+            await self.setup_chat_interface()
 
-        # Set up chat interface immediately - dialogs can continue dismissing in background
-        await self.setup_chat_interface()
+            print("\n" + "=" * 60)
+            print("✅ Roll20 client fully initialized and ready!")
+            print("=" * 60)
 
-        print("\n" + "=" * 60)
-        print("✅ Roll20 client fully initialized and ready!")
-        print("=" * 60)
+        except Exception as e:
+            print("\n" + "=" * 60)
+            print("❌ INITIALIZATION FAILED")
+            print("=" * 60)
+            print(f"Error: {e}")
+
+            # Capture screenshot and DOM on failure (especially useful in headless mode)
+            if self.page:
+                print("\nAttempting to capture screenshot and DOM for debugging...")
+
+                # Capture both screenshot and DOM with same timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                screenshot_path = await self.capture_screenshot(f"roll20_error_{timestamp}.png")
+                dom_path = await self.capture_dom(f"roll20_error_{timestamp}.html")
+
+                if screenshot_path:
+                    print(f"Screenshot saved to: {screenshot_path}")
+                if dom_path:
+                    print(f"DOM saved to: {dom_path}")
+
+                if screenshot_path or dom_path:
+                    print("These can help diagnose what went wrong in headless mode.")
+
+            # Re-raise the exception so caller knows initialization failed
+            raise
 
     async def close(self):
         """Close the browser."""
