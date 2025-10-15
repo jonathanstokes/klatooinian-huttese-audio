@@ -21,28 +21,26 @@ def test_different_seeds():
 
 
 def test_quoted_text_preserved():
-    """Test that text in quotes is preserved as-is."""
+    """Test that text in double quotes is preserved as-is."""
     from src.audio.translation import rewrite_to_huttese
     
-    # Single quotes
-    result = rewrite_to_huttese("Bring me 'Solo' quickly", seed=42)
-    assert "Solo" in result or "solo" in result  # Should preserve Solo
-    assert "bring" not in result.lower()  # "bring" should be transformed
+    # Note: Single quotes are NOT treated as literal markers (they're used for contractions)
+    # Only double quotes preserve text
     
     # Double quotes
     result = rewrite_to_huttese('The droid named "R2-D2" is here', seed=42)
     assert "R2-D2" in result  # Should preserve R2-D2 exactly
     
-    # Multiple quoted sections
-    result = rewrite_to_huttese("Tell 'Han' that 'Leia' is waiting", seed=42)
+    # Multiple double-quoted sections
+    result = rewrite_to_huttese('Tell "Han" that "Leia" is waiting', seed=42)
     assert "Han" in result
     assert "Leia" in result
     assert "tell" not in result.lower()  # Should be transformed
     
-    # Mixed quotes
-    result = rewrite_to_huttese("'Jabba' says \"bring the spice\"", seed=42)
-    assert "Jabba" in result
-    assert "bring the spice" in result
+    # Double quotes with other text
+    result = rewrite_to_huttese('Bring me "the spice" quickly', seed=42)
+    assert "the spice" in result
+    assert "bring" not in result.lower()  # Should be transformed
 
 
 def test_word_swapping():
@@ -336,3 +334,23 @@ def test_literal_position_preservation():
                 del os.environ["LITERAL_PHRASES"]
         else:
             os.environ["LITERAL_PHRASES"] = original_env
+
+
+def test_double_quotes_with_contractions():
+    """Test that double-quoted text is preserved even when contractions (apostrophes) are present."""
+    # This is a regression test for the issue where apostrophes in contractions
+    # (like "it's" and "I'll") were being treated as single-quote delimiters,
+    # causing the regex to match from the first apostrophe to the last one.
+    
+    text = 'Okay. If it\'s a "stupid human" who comes through the door, you hit him high, I\'ll hit him low.'
+    result = rewrite_to_huttese(text, seed=42, strip_stop_words=True, strip_every_nth=3)
+    
+    # The double-quoted phrase "stupid human" should be preserved in the output
+    assert "stupid human" in result, f"Double-quoted phrase should be preserved even with contractions present: {result}"
+    
+    # The contractions should be transformed (not preserved as literals)
+    # "it's" should become something like "itah" or similar
+    # "I'll" should become something like "ilah" or similar
+    # We just verify they're not preserved as-is
+    assert "it's" not in result.lower(), f"Contraction 'it's' should be transformed, not preserved: {result}"
+    assert "i'll" not in result.lower(), f"Contraction 'I'll' should be transformed, not preserved: {result}"

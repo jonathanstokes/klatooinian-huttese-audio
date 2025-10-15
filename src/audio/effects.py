@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 # Voice volume constants (in dB)
-VOICE_VOLUME_MIN_DB = -6  # Softest
-VOICE_VOLUME_MAX_DB = 0   # Loudest
+VOICE_VOLUME_MIN_DB = -16  # Softest
+VOICE_VOLUME_MAX_DB = 6   # Loudest
 VOICE_VOLUME_DEFAULT_DB = -3  # Middle
 
 def ensure_tool(name: str):

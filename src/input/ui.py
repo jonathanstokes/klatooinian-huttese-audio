@@ -73,16 +73,16 @@ from ..audio.engines.simple import synth_to_wav
 from ..roll20.service import Roll20Service, ServiceState
 from ..roll20.config import config as roll20_config
 from ..roll20.verbose import vprint
-from ..config.settings import load_settings, save_settings
+from ..config.settings import load_settings, save_settings, load_history, save_history
 
 
 # Unique identifier for single instance
 SINGLE_INSTANCE_ID = "klatooinian-huttese-ui-single-instance"
 
 
-# Delay (in milliseconds) before sending message to Roll20
+# Delay (in milliseconds) before sending the message(s) to Roll20
 # This allows audio synthesis to start before the Roll20 message is sent
-ROLL20_MESSAGE_DELAY_MS = 750
+ROLL20_MESSAGE_DELAY_MS = 1000
 
 # Maximum number of history items to keep
 MAX_HISTORY_ITEMS = 30
@@ -469,8 +469,8 @@ class HutteseUI(QMainWindow):
         # Load settings from persistent storage
         self.settings = load_settings()
 
-        # History of last N things said
-        self.history = deque(maxlen=MAX_HISTORY_ITEMS)
+        # Load history from persistent storage
+        self.history = load_history(max_items=MAX_HISTORY_ITEMS)
 
         # Worker thread for synthesis
         self.worker = None
@@ -480,6 +480,10 @@ class HutteseUI(QMainWindow):
 
         self.init_ui()
         self.init_roll20(headless=headless)
+
+        # Update history display if we loaded any history
+        if self.history:
+            self.update_history_display()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -695,11 +699,12 @@ class HutteseUI(QMainWindow):
         html_parts = []
         for i, (english, huttese) in enumerate(self.history):
             # Make each history item a clickable link
+            # Use light colors for better contrast in dark mode
             html_parts.append(
                 f'<div style="margin-bottom: 8px;">'
-                f'<a href="#item-{i}" style="text-decoration: none; color: inherit;">'
-                f'<b>{english}</b><br>'
-                f'<span style="color: #666;">→ {huttese}</span>'
+                f'<a href="#item-{i}" style="text-decoration: none;">'
+                f'<b style="color: #E8E8E8;">{english}</b><br>'
+                f'<span style="color: #999;">→ {huttese}</span>'
                 f'</a>'
                 f'</div>'
             )
@@ -711,7 +716,10 @@ class HutteseUI(QMainWindow):
         scrollbar.setValue(scrollbar.maximum())
 
     def closeEvent(self, event):
-        """Handle window close event to clean up Roll20 service."""
+        """Handle window close event to clean up Roll20 service and save history."""
+        # Save history to persistent storage
+        save_history(self.history)
+
         if self.roll20_worker:
             vprint("\n[UI] Shutting down Roll20 service...")
             self.roll20_worker.stop()

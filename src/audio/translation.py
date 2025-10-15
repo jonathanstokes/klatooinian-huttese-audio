@@ -294,16 +294,16 @@ def rewrite_to_huttese(
     placeholder_pattern = "§§§{}§§§"
     
     def save_preserved(match):
-        # Extract content from either single or double quotes
-        content = match.group(1) if match.group(1) is not None else match.group(2)
+        # Extract content from double quotes
+        content = match.group(1)
         idx = len(preserved_sections)
         preserved_sections.append(content)
         # Don't add extra spaces - let the original spacing remain
         return placeholder_pattern.format(idx)
     
     # First, replace quoted text with placeholders
-    # Match both 'text' and "text"
-    s = re.sub(r"'([^']+)'|\"([^\"]+)\"", save_preserved, text)
+    # Match only "text" (double quotes) - single quotes are used for contractions
+    s = re.sub(r"\"([^\"]+)\"", save_preserved, text)
     
     # Second, replace literal phrases from environment variable
     literal_phrases = _get_literal_phrases()
